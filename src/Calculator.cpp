@@ -638,7 +638,8 @@ static void CalculateResult(void)
         {
             vm_delete_timer(g_gagExitTimer);
         }
-        g_gagExitTimer = vm_create_timer(2250, OnExplosionExitTimer);
+        // Gag Easter Egg: Division / Modulo by 0 (e.g., 1/0, 1/(0)) plays SFX and exits after audio finishes
+        g_gagExitTimer = vm_create_timer(1850, OnExplosionExitTimer);
         return; // NO visual changes - keep screen as is
     }
 
