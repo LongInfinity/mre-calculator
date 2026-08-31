@@ -15,6 +15,15 @@ A Windows 7 Aero Glass inspired scientific calculator application for **MediaTek
 
 ---
 
+## 📸 Gallery
+
+| Main Calculator View | Scientific Functions & History |
+| :---: | :---: |
+| <img src="screenshots/20260831_212351.jpg" width="340" alt="Main Calculator View" /> | <img src="screenshots/20260831_212406.jpg" width="340" alt="Scientific Functions and History" /> |
+| *Windows 7 Aero layout on Nokia device* | *Live calculation on phone* |
+
+---
+
 ## 📥 Download
 
 * **Direct App Download**: [**`Calculator.vxp` (Latest Release)**](https://github.com/LongInfinity/mre-calculator/releases/latest/download/Calculator.vxp)
