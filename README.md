@@ -17,10 +17,11 @@ A Windows 7 Aero Glass inspired scientific calculator application for **MediaTek
 
 ## 📸 Gallery
 
-| Main Calculator View | Scientific Functions & History |
+### Divide by zero and normal calculation
+
+| Divide by Zero (`1/0`) | Normal Calculation (`1+1 = 2`) |
 | :---: | :---: |
-| <img src="screenshots/20260831_212351.jpg" width="340" alt="Main Calculator View" /> | <img src="screenshots/20260831_212406.jpg" width="340" alt="Scientific Functions and History" /> |
-| *Windows 7 Aero layout on Nokia device* | *Live calculation on phone* |
+| <img src="screenshots/20260831_212351.jpg" width="340" alt="Divide by zero (1/0)" /> | <img src="screenshots/20260831_212406.jpg" width="340" alt="Normal calculation (1+1 = 2)" /> |
 
 ---
 
