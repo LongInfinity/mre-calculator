@@ -1,4 +1,4 @@
-Don't you hate it when you forget your calculator and only brought your dumnb phone?
+Don't you hate it when you forget your calculator and only brought your dumb phone?
 
 Inspired by Windows 7 Calculator.
 Created using MRE Makefile by gtrxAC: https://github.com/gtrxAC/mre-makefile
