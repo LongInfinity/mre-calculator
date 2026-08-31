@@ -1,0 +1,8 @@
+.vscode/
+.DS_Store
+build/
+
+*.o
+*.axf
+*.vxp
+
