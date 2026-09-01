@@ -2,7 +2,7 @@
 	"name": "Calculator",
 	"vendor": "LongInfinity",
 	"description": "Scientific Calculator for MediaTek MRE",
-	"version": 100,
+	"version": 110,
 	"required_ram": 1024,
 	"imsi": "9452040955907144",
 	"run_in_background": 0,

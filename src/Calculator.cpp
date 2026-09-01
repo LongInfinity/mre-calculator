@@ -67,6 +67,27 @@ static int g_pressedCol = -1;
 static int g_pressedRow = -1;
 static VMINT g_pressTimer = -1;
 
+enum TSlideDirection
+{
+    ESlideNone,
+    ESlideOpening, // Normal -> History (History slides UP from bottom as overlay: +320 -> 0)
+    ESlideClosing  // History -> Normal (History slides DOWN to bottom: 0 -> +320)
+};
+
+static const int KSlideTotalFrames = 10; // 10 frames * ~16.7ms = 166.7ms (1/6s)
+static TSlideDirection g_slideState = ESlideNone;
+static int g_slideFrame = 0;
+static int g_slideOffsetY = 0; // 0 .. 320 (History Y offset)
+static VMINT g_slideTimer = -1;
+
+// Directional Key Hold and Diagonal Navigation
+static bool g_keyUpHeld = false;
+static bool g_keyDownHeld = false;
+static bool g_keyLeftHeld = false;
+static bool g_keyRightHeld = false;
+static VMINT g_keyHoldTimer = -1;
+static bool g_keyHoldInRepeat = false;
+
 static bool g_isExitingGag = false;
 static VMINT g_gagExitTimer = -1;
 
@@ -214,6 +235,113 @@ static void StartHistoryFocusTransition(int newFocus, int newTop)
     RenderScreen();
 }
 
+static void ResetKeyHoldState(void)
+{
+    g_keyUpHeld = false;
+    g_keyDownHeld = false;
+    g_keyLeftHeld = false;
+    g_keyRightHeld = false;
+    if (g_keyHoldTimer != -1)
+    {
+        vm_delete_timer(g_keyHoldTimer);
+        g_keyHoldTimer = -1;
+    }
+    g_keyHoldInRepeat = false;
+}
+
+static void GetNetDirection(int& dx, int& dy)
+{
+    // Horizontal axis:
+    // If both Right and Left are held -> opposite buttons cancel each other (dx = 0)
+    // If only Right is held -> dx = 1
+    // If only Left is held -> dx = -1
+    if (g_keyRightHeld && !g_keyLeftHeld) dx = 1;
+    else if (g_keyLeftHeld && !g_keyRightHeld) dx = -1;
+    else dx = 0;
+
+    // Vertical axis:
+    // If both Down and Up are held -> opposite buttons cancel each other (dy = 0)
+    // If only Down is held -> dy = 1
+    // If only Up is held -> dy = -1
+    if (g_keyDownHeld && !g_keyUpHeld) dy = 1;
+    else if (g_keyUpHeld && !g_keyDownHeld) dy = -1;
+    else dy = 0;
+}
+
+static void StepDirectionalNavigation(int dx, int dy)
+{
+    if (dx == 0 && dy == 0) return;
+    if (g_isExitingGag || g_slideState != ESlideNone) return;
+
+    if (g_viewMode == EViewHistory)
+    {
+        int total = g_engine.HistoryCount();
+        if (total > 0 && dy != 0)
+        {
+            int newFocus = g_historyFocus + dy;
+            if (newFocus < 0)
+            {
+                newFocus = total - 1;
+            }
+            else if (newFocus >= total)
+            {
+                newFocus = 0;
+            }
+
+            int newTop = g_historyTop;
+            if (newFocus < newTop)
+            {
+                newTop = newFocus;
+            }
+            else if (newFocus >= newTop + 5)
+            {
+                newTop = newFocus - 5 + 1;
+            }
+            StartHistoryFocusTransition(newFocus, newTop);
+        }
+    }
+    else
+    {
+        int newCol = (g_selectedCol + dx + KGridCols) % KGridCols;
+        int newRow = (g_selectedRow + dy + KGridRows) % KGridRows;
+        StartGridFocusTransition(newCol, newRow);
+    }
+}
+
+static void OnKeyHoldTimerTick(VMINT tid)
+{
+    if (g_isExitingGag || g_slideState != ESlideNone) return;
+
+    int dx = 0, dy = 0;
+    GetNetDirection(dx, dy);
+
+    if (!g_keyUpHeld && !g_keyDownHeld && !g_keyLeftHeld && !g_keyRightHeld)
+    {
+        if (g_keyHoldTimer != -1)
+        {
+            vm_delete_timer(g_keyHoldTimer);
+            g_keyHoldTimer = -1;
+        }
+        g_keyHoldInRepeat = false;
+        return;
+    }
+
+    if (dx != 0 || dy != 0)
+    {
+        StepDirectionalNavigation(dx, dy);
+    }
+
+    if (!g_keyHoldInRepeat)
+    {
+        g_keyHoldInRepeat = true;
+        if (g_keyHoldTimer != -1)
+        {
+            vm_delete_timer(g_keyHoldTimer);
+        }
+        g_keyHoldTimer = vm_create_timer(100, OnKeyHoldTimerTick);
+    }
+}
+
 static void OnPressTimerExpired(VMINT tid)
 {
     g_pressedCol = -1;
@@ -248,19 +376,6 @@ static void OnExplosionExitTimer(VMINT tid)
     vm_audio_stop_all();
     vm_exit_app();
 }
-
-enum TSlideDirection
-{
-    ESlideNone,
-    ESlideOpening, // Normal -> History (History slides UP from bottom as overlay: +320 -> 0)
-    ESlideClosing  // History -> Normal (History slides DOWN to bottom: 0 -> +320)
-};
-
-static const int KSlideTotalFrames = 10; // 10 frames * ~16.7ms = 166.7ms (1/6s)
-static TSlideDirection g_slideState = ESlideNone;
-static int g_slideFrame = 0;
-static int g_slideOffsetY = 0; // 0 .. 320 (History Y offset)
-static VMINT g_slideTimer = -1;
 
 static void OnSlideTimer(VMINT tid)
 {
@@ -316,6 +431,7 @@ static void OnSlideTimer(VMINT tid)
 static void OpenHistoryWithAnimation(void)
 {
     if (g_slideState != ESlideNone) return;
+    ResetKeyHoldState();
     int total = g_engine.HistoryCount();
     if (total > 0)
     {
@@ -346,6 +462,7 @@ static void OpenHistoryWithAnimation(void)
 static void CloseHistoryWithAnimation(void)
 {
     if (g_slideState != ESlideNone) return;
+    ResetKeyHoldState();
     g_slideState = ESlideClosing;
     g_slideFrame = 0;
     g_slideOffsetY = 0; // Start at top (0)
@@ -1120,6 +1237,7 @@ void handle_sysevt(VMINT message, VMINT param)
 
     case VM_MSG_INACTIVE:
     case VM_MSG_HIDE:
+        ResetKeyHoldState();
         if (g_layer != -1)
         {
             vm_graphic_delete_layer(g_layer);
@@ -1128,6 +1246,7 @@ void handle_sysevt(VMINT message, VMINT param)
         break;
 
     case VM_MSG_QUIT:
+        ResetKeyHoldState();
         if (g_layer != -1)
         {
             vm_graphic_delete_layer(g_layer);
@@ -1140,62 +1259,74 @@ void handle_sysevt(VMINT message, VMINT param)
 
 void handle_keyevt(VMINT event, VMINT keycode)
 {
-    // Handle KEY DOWN only, and block inputs while gag exit sequence or slide animation is active
-    if (event != VM_KEY_EVENT_DOWN || g_isExitingGag || g_slideState != ESlideNone) return;
+    if (g_isExitingGag || g_slideState != ESlideNone) return;
+
+    // 1. Directional D-Pad keys (UP, DOWN, LEFT, RIGHT)
+    // Supports holding, simultaneous multi-key diagonal navigation, and opposite-key cancellation
+    if (keycode == VM_KEY_UP || keycode == VM_KEY_DOWN || keycode == VM_KEY_LEFT || keycode == VM_KEY_RIGHT)
+    {
+        if (event == VM_KEY_EVENT_DOWN)
+        {
+            if (keycode == VM_KEY_UP) g_keyUpHeld = true;
+            else if (keycode == VM_KEY_DOWN) g_keyDownHeld = true;
+            else if (keycode == VM_KEY_LEFT) g_keyLeftHeld = true;
+            else if (keycode == VM_KEY_RIGHT) g_keyRightHeld = true;
+
+            int dx = 0, dy = 0;
+            GetNetDirection(dx, dy);
+            if (dx != 0 || dy != 0)
+            {
+                StepDirectionalNavigation(dx, dy);
+            }
+
+            // Start initial hold delay timer (280ms)
+            if (g_keyHoldTimer != -1)
+            {
+                vm_delete_timer(g_keyHoldTimer);
+                g_keyHoldTimer = -1;
+            }
+            g_keyHoldInRepeat = false;
+            g_keyHoldTimer = vm_create_timer(280, OnKeyHoldTimerTick);
+            return;
+        }
+        else if (event == VM_KEY_EVENT_UP)
+        {
+            if (keycode == VM_KEY_UP) g_keyUpHeld = false;
+            else if (keycode == VM_KEY_DOWN) g_keyDownHeld = false;
+            else if (keycode == VM_KEY_LEFT) g_keyLeftHeld = false;
+            else if (keycode == VM_KEY_RIGHT) g_keyRightHeld = false;
+
+            if (!g_keyUpHeld && !g_keyDownHeld && !g_keyLeftHeld && !g_keyRightHeld)
+            {
+                if (g_keyHoldTimer != -1)
+                {
+                    vm_delete_timer(g_keyHoldTimer);
+                    g_keyHoldTimer = -1;
+                }
+                g_keyHoldInRepeat = false;
+            }
+            return;
+        }
+        return; // Ignore REPEAT for D-Pad since custom timer manages auto-repeat
+    }
+
+    // 2. Non-directional keys respond to KEY DOWN (and REPEAT for backspace/delete)
+    if (event != VM_KEY_EVENT_DOWN && event != VM_KEY_EVENT_REPEAT)
+    {
+        return;
+    }
+
+    // Ignore REPEAT for single-action triggers like OK and softkeys
+    if (event == VM_KEY_EVENT_REPEAT && keycode != VM_KEY_CLEAR && keycode != VM_KEY_BACK && keycode != VM_KEY_BACKSPACE && keycode != VM_KEY_DEL && keycode != VM_KEY_RIGHT_SOFTKEY)
+    {
+        return;
+    }
 
     if (g_viewMode == EViewHistory)
     {
-        int total = g_engine.HistoryCount();
-
-        // History mode navigation with wrapped scrolling and smooth fade
-        if (keycode == VM_KEY_UP)
-        {
-            if (total > 0)
-            {
-                int newFocus = g_historyFocus;
-                int newTop = g_historyTop;
-                if (newFocus > 0)
-                {
-                    newFocus--;
-                    if (newFocus < newTop)
-                    {
-                        newTop = newFocus;
-                    }
-                }
-                else
-                {
-                    newFocus = total - 1;
-                    newTop = (total > 5) ? (total - 5) : 0;
-                }
-                StartHistoryFocusTransition(newFocus, newTop);
-            }
-            return;
-        }
-        if (keycode == VM_KEY_DOWN)
-        {
-            if (total > 0)
-            {
-                int newFocus = g_historyFocus;
-                int newTop = g_historyTop;
-                if (newFocus < total - 1)
-                {
-                    newFocus++;
-                    if (newFocus >= newTop + 5)
-                    {
-                        newTop = newFocus - 5 + 1;
-                    }
-                }
-                else
-                {
-                    newFocus = 0;
-                    newTop = 0;
-                }
-                StartHistoryFocusTransition(newFocus, newTop);
-            }
-            return;
-        }
         if (keycode == VM_KEY_OK) // Select history item
         {
+            int total = g_engine.HistoryCount();
             if (total > 0 && g_historyFocus >= 0 && g_historyFocus < total)
             {
                 const THistoryItem& item = g_engine.HistoryItem(g_historyFocus);
@@ -1224,28 +1355,6 @@ void handle_keyevt(VMINT event, VMINT keycode)
     }
 
     // Normal Mode Key Handlers
-
-    // 1. D-Pad Directional Navigation with smooth fade transitions
-    if (keycode == VM_KEY_UP)
-    {
-        StartGridFocusTransition(g_selectedCol, (g_selectedRow + KGridRows - 1) % KGridRows);
-        return;
-    }
-    if (keycode == VM_KEY_DOWN)
-    {
-        StartGridFocusTransition(g_selectedCol, (g_selectedRow + 1) % KGridRows);
-        return;
-    }
-    if (keycode == VM_KEY_LEFT)
-    {
-        StartGridFocusTransition((g_selectedCol + KGridCols - 1) % KGridCols, g_selectedRow);
-        return;
-    }
-    if (keycode == VM_KEY_RIGHT)
-    {
-        StartGridFocusTransition((g_selectedCol + 1) % KGridCols, g_selectedRow);
-        return;
-    }
     if (keycode == VM_KEY_OK) // Center D-Pad
     {
         ExecuteButton(g_selectedCol, g_selectedRow);
@@ -1253,7 +1362,7 @@ void handle_keyevt(VMINT event, VMINT keycode)
         return;
     }
 
-    // 2. Softkeys
+    // Softkeys
     if (keycode == VM_KEY_LEFT_SOFTKEY) // Open History with slide animation
     {
         OpenHistoryWithAnimation();
@@ -1268,30 +1377,42 @@ void handle_keyevt(VMINT event, VMINT keycode)
         }
         else
         {
-            vm_exit_app();
+            if (event == VM_KEY_EVENT_DOWN)
+            {
+                vm_exit_app();
+            }
         }
         return;
     }
 
-    // 3. Note 3: Physical Numeric Keys 0-9
+    // Physical Numeric Keys 0-9
     if (keycode >= VM_KEY_NUM0 && keycode <= VM_KEY_NUM9)
     {
-        AppendChar((VMWCHAR)('0' + (keycode - VM_KEY_NUM0)));
-        RenderScreen();
+        if (event == VM_KEY_EVENT_DOWN)
+        {
+            AppendChar((VMWCHAR)('0' + (keycode - VM_KEY_NUM0)));
+            RenderScreen();
+        }
         return;
     }
 
-    // 4. Other Physical Keys
+    // Other Physical Keys
     if (keycode == VM_KEY_POUND) // # enters .
     {
-        AppendChar('.');
-        RenderScreen();
+        if (event == VM_KEY_EVENT_DOWN)
+        {
+            AppendChar('.');
+            RenderScreen();
+        }
         return;
     }
     if (keycode == VM_KEY_STAR) // * enters +/-
     {
-        ToggleSign();
-        RenderScreen();
+        if (event == VM_KEY_EVENT_DOWN)
+        {
+            ToggleSign();
+            RenderScreen();
+        }
         return;
     }
     if (keycode == VM_KEY_CLEAR || keycode == VM_KEY_BACK || keycode == VM_KEY_BACKSPACE || keycode == VM_KEY_DEL)
