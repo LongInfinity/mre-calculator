@@ -81,6 +81,8 @@ static int g_slideOffsetY = 0; // 0 .. 320 (History Y offset)
 static VMINT g_slideTimer = -1;
 
 // Directional Key Hold and Diagonal Navigation
+static const int KKeyHoldInitialDelayMs = 333; // Initial delay before repeating (333ms)
+static const int KKeyHoldRepeatIntervalMs = 100; // Continuous step interval (100ms)
 static bool g_keyUpHeld = false;
 static bool g_keyDownHeld = false;
 static bool g_keyLeftHeld = false;
@@ -338,7 +340,7 @@ static void OnKeyHoldTimerTick(VMINT tid)
         {
             vm_delete_timer(g_keyHoldTimer);
         }
-        g_keyHoldTimer = vm_create_timer(100, OnKeyHoldTimerTick);
+        g_keyHoldTimer = vm_create_timer(KKeyHoldRepeatIntervalMs, OnKeyHoldTimerTick);
     }
 }
 
@@ -1279,14 +1281,14 @@ void handle_keyevt(VMINT event, VMINT keycode)
                 StepDirectionalNavigation(dx, dy);
             }
 
-            // Start initial hold delay timer (280ms)
+            // Start initial hold delay timer (333ms)
             if (g_keyHoldTimer != -1)
             {
                 vm_delete_timer(g_keyHoldTimer);
                 g_keyHoldTimer = -1;
             }
             g_keyHoldInRepeat = false;
-            g_keyHoldTimer = vm_create_timer(280, OnKeyHoldTimerTick);
+            g_keyHoldTimer = vm_create_timer(KKeyHoldInitialDelayMs, OnKeyHoldTimerTick);
             return;
         }
         else if (event == VM_KEY_EVENT_UP)
