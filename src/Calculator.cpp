@@ -1419,9 +1419,9 @@ static void DrawTaskbar(bool isHistoryView)
     int leftDividerX = 8 + lskW + 8;
     int rightDividerX = (KScreenWidth - rskW - 8) - 8;
 
-    // 1. Base Taskbar Background Fill & Softkey Region Press Glow (Darker Gray Palette)
-    VMUINT16 baseTop = KColor_RGB(244, 246, 249);
-    VMUINT16 baseBot = KColor_RGB(230, 234, 240);
+    // 1. Base Taskbar Background Fill & Softkey Region Press Glow (True Gray Palette: R = G = B)
+    VMUINT16 baseTop = KColor_RGB(245, 245, 245);
+    VMUINT16 baseBot = KColor_RGB(230, 230, 230);
 
     // Left Softkey Region (0 to leftDividerX)
     VMUINT16 lskTopCol = baseTop;
@@ -1429,8 +1429,8 @@ static void DrawTaskbar(bool isHistoryView)
     if (g_lskPressAmount > 0.001f)
     {
         int p = (int)(g_lskPressAmount * 256.0f);
-        lskTopCol = BlendRGB565(baseTop, KColor_RGB(165, 178, 195), p);
-        lskBotCol = BlendRGB565(baseBot, KColor_RGB(130, 145, 168), p);
+        lskTopCol = BlendRGB565(baseTop, KColor_RGB(160, 160, 160), p);
+        lskBotCol = BlendRGB565(baseBot, KColor_RGB(125, 125, 125), p);
     }
     SetDrawColor(lskTopCol);
     vm_graphic_fill_rect_ex(g_layer, 0, KTaskbarTop + 1, leftDividerX, 11);
@@ -1453,8 +1453,8 @@ static void DrawTaskbar(bool isHistoryView)
     if (g_rskPressAmount > 0.001f)
     {
         int p = (int)(g_rskPressAmount * 256.0f);
-        rskTopCol = BlendRGB565(baseTop, KColor_RGB(165, 178, 195), p);
-        rskBotCol = BlendRGB565(baseBot, KColor_RGB(130, 145, 168), p);
+        rskTopCol = BlendRGB565(baseTop, KColor_RGB(160, 160, 160), p);
+        rskBotCol = BlendRGB565(baseBot, KColor_RGB(125, 125, 125), p);
     }
     int rskWTotal = KScreenWidth - (rightDividerX + 1);
     if (rskWTotal > 0)
@@ -1465,8 +1465,8 @@ static void DrawTaskbar(bool isHistoryView)
         vm_graphic_fill_rect_ex(g_layer, rightDividerX + 1, KTaskbarTop + 12, rskWTotal, 12);
     }
 
-    // 2. Dividers (same divider color as keypad buttons)
-    SetDrawColor(KColor_RGB(160, 182, 208));
+    // 2. Dividers (True Gray: R = G = B)
+    SetDrawColor(KColor_RGB(175, 175, 175));
     vm_graphic_line_ex(g_layer, 0, KTaskbarTop, KScreenWidth - 1, KTaskbarTop);
     vm_graphic_line_ex(g_layer, leftDividerX, KTaskbarTop + 1, leftDividerX, KScreenHeight - 1);
     vm_graphic_line_ex(g_layer, rightDividerX, KTaskbarTop + 1, rightDividerX, KScreenHeight - 1);
