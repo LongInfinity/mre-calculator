@@ -75,13 +75,14 @@ enum TSlideDirection
 };
 
 static const int KSlideTotalFrames = 10; // 10 frames * ~16.7ms = 166.7ms (1/6s)
-static const int KContentViewTop = 38;
-static const int KContentViewHeight = 258; // 296 - 38 = 258px
-static VMUINT16 s_historyBackdrop[KScreenWidth * KContentViewHeight];
+static const int KMainViewHeight = 296; // Main calculation / history area (Y: 0..295)
+static const int KTaskbarTop = 296;     // Stationary taskbar at bottom (Y: 296..319)
+static const int KTaskbarHeight = 24;
+static VMUINT16 s_historyBackdrop[KScreenWidth * KMainViewHeight];
 
 static TSlideDirection g_slideState = ESlideNone;
 static int g_slideFrame = 0;
-static int g_slideOffsetY = 0; // Content viewport Y offset for opening slide
+static int g_slideOffsetY = 0; // Main area Y offset for opening slide
 static VMINT g_slideTimer = -1;
 
 // Directional Key Hold and Diagonal Navigation
@@ -106,8 +107,9 @@ static TGridBtn g_buttons[KGridRows][KGridCols];
 
 // Forward declarations
 static void RenderScreen(void);
-static void RenderNormalView(void);
-static void RenderHistoryView(int contentOffsetY);
+static void RenderCalculatorMain(void);
+static void RenderHistoryMain(int offsetY);
+static void DrawTaskbar(bool isHistoryView);
 static void ExecuteButton(int col, int row);
 static void CalculateResult(void);
 static void ClearEntry(void);
@@ -403,10 +405,10 @@ static void OnSlideTimer(VMINT tid)
         }
         else
         {
-            // Ease-Out rate 4 (Quartic): content slides up into viewport
+            // Ease-Out rate 4 (Quartic): main elements slide up into view
             float rem = 1.0f - (float)g_slideFrame / (float)KSlideTotalFrames;
             float rem4 = rem * rem * rem * rem;
-            g_slideOffsetY = (int)(KContentViewHeight * rem4 + 0.5f);
+            g_slideOffsetY = (int)(KMainViewHeight * rem4 + 0.5f);
         }
     }
     else if (g_slideState == ESlideClosing)
@@ -451,7 +453,7 @@ static void OpenHistoryWithAnimation(void)
     g_viewMode = EViewHistory;
     g_slideState = ESlideOpening;
     g_slideFrame = 0;
-    g_slideOffsetY = KContentViewHeight; // Content slides up from bottom of content viewport (+258)
+    g_slideOffsetY = KMainViewHeight; // Main elements slide up from bottom (+296)
     if (g_slideTimer == -1)
     {
         g_slideTimer = vm_create_timer(17, OnSlideTimer);
@@ -464,14 +466,14 @@ static void CloseHistoryWithAnimation(void)
     if (g_slideState != ESlideNone) return;
     ResetKeyHoldState();
 
-    // Snapshot current History content area for Fade In Out cross-fade transition
+    // Snapshot current History main elements area for Fade In Out cross-fade transition
     if (g_layer != -1)
     {
-        RenderHistoryView(0);
+        RenderHistoryMain(0);
         VMUINT16* fb = (VMUINT16*)vm_graphic_get_layer_buffer(g_layer);
         if (fb != NULL)
         {
-            memcpy(s_historyBackdrop, fb + KContentViewTop * KScreenWidth, KScreenWidth * KContentViewHeight * sizeof(VMUINT16));
+            memcpy(s_historyBackdrop, fb, KScreenWidth * KMainViewHeight * sizeof(VMUINT16));
         }
     }
 
@@ -1073,8 +1075,12 @@ static void DrawTitleBar(VMINT layer, int offsetY, const VMWCHAR* titleText)
     }
 }
 
-static void RenderNormalView(void)
+static void RenderCalculatorMain(void)
 {
+    // Solid background fill for main calculation area (Y: 0 to 295) - fixes transparency
+    SetDrawColor(KColor_RGB(218, 228, 242));
+    vm_graphic_fill_rect_ex(g_layer, 0, 0, KScreenWidth, KMainViewHeight);
+
     // 1. Title Bar (Height: 34px, Width: 240px with Windows 7 Icon)
     DrawTitleBar(g_layer, 0, (const VMWCHAR*)u"Calculator");
 
@@ -1167,55 +1173,32 @@ static void RenderNormalView(void)
             vm_graphic_textout_to_layer(g_layer, txtX, txtY, (VMWSTR)labelText, w_strlen(labelText));
         }
     }
-
-    // 4. Bottom Softkey Bar (Y: 296 to 319) - Aero Frosted Bar
-    DrawRoundRect(g_layer, 0, 296, KScreenWidth, 24, 0, KColor_RGB(165, 188, 215), KColor_RGB(205, 220, 238));
-
-    SetDrawColor(KColor_RGB(30, 60, 105)); // Left Softkey: History
-    vm_graphic_textout_to_layer(g_layer, 6, 300, (VMWSTR)u"History", 7);
-
-    // Right Softkey: "Clear" if expression has characters, "Exit" if empty
-    bool hasChars = (w_strlen(g_expression) > 0 || g_result[0] != 0);
-    const VMWCHAR* rskLabel = hasChars ? (const VMWCHAR*)u"Clear" : (const VMWCHAR*)u"Exit";
-    SetDrawColor(KColor_RGB(165, 35, 45));
-    int rskW = vm_graphic_get_string_width((VMWSTR)rskLabel);
-    vm_graphic_textout_to_layer(g_layer, KScreenWidth - rskW - 6, 300, (VMWSTR)rskLabel, w_strlen(rskLabel));
 }
 
-static void RenderHistoryView(int contentOffsetY)
+static void RenderHistoryMain(int offsetY)
 {
-    // 1. Fixed Top Title Bar (Height: 34px, Width: 240px with Windows 7 Icon - stationary)
-    DrawTitleBar(g_layer, 0, (const VMWCHAR*)u"History");
+    // Clip specifically to main elements area (Y: 0 to 295) so slide does not bleed into taskbar
+    vm_graphic_set_clip(0, 0, KScreenWidth, KMainViewHeight);
+
+    // Solid background fill for main area
+    SetDrawColor(KColor_RGB(218, 228, 242));
+    vm_graphic_fill_rect_ex(g_layer, 0, 0, KScreenWidth, KMainViewHeight);
+
+    // 1. Title Bar (Height: 34px, Width: 240px with Windows 7 Icon)
+    DrawTitleBar(g_layer, offsetY, (const VMWCHAR*)u"History");
 
     // Force system small font
     vm_graphic_set_font(VM_SMALL_FONT);
     vm_font_set_font_size(VM_SMALL_FONT);
 
-    // 2. Fixed Bottom Softkey Bar (Y: 296 to 319 - stationary taskbar)
-    DrawRoundRect(g_layer, 0, 296, KScreenWidth, 24, 0, KColor_RGB(165, 188, 215), KColor_RGB(205, 220, 238));
-
-    SetDrawColor(KColor_RGB(165, 35, 45)); // Left Softkey: Clr&Close
-    vm_graphic_textout_to_layer(g_layer, 6, 300, (VMWSTR)u"Clr&Close", 9);
-
-    SetDrawColor(KColor_RGB(30, 60, 105)); // Right Softkey: Back
-    int backW = vm_graphic_get_string_width((VMWSTR)u"Back");
-    vm_graphic_textout_to_layer(g_layer, KScreenWidth - backW - 6, 300, (VMWSTR)u"Back", 4);
-
-    // 3. Middle Content Area (Y: 38 to 295, Height: 258px - strictly clipped between bars)
-    vm_graphic_set_clip(0, KContentViewTop, KScreenWidth, KContentViewHeight);
-
-    // Content background fill
-    SetDrawColor(KColor_RGB(218, 228, 242));
-    vm_graphic_fill_rect_ex(g_layer, 0, KContentViewTop, KScreenWidth, KContentViewHeight);
-
-    // List container (Y: 38 + contentOffsetY, Height: 254px - 1px clipped corners)
-    DrawClippedRect(g_layer, 4, 38 + contentOffsetY, 232, 254, KColor_RGB(165, 185, 208), KColor_RGB(248, 250, 254));
+    // 2. List container (Y: 38 + offsetY, Height: 254px - 1px clipped corners)
+    DrawClippedRect(g_layer, 4, 38 + offsetY, 232, 254, KColor_RGB(165, 185, 208), KColor_RGB(248, 250, 254));
 
     int total = g_engine.HistoryCount();
     if (total == 0)
     {
-        int msgY = 138 + contentOffsetY;
-        if (msgY >= KContentViewTop && msgY < 296 - 14)
+        int msgY = 138 + offsetY;
+        if (msgY >= 0 && msgY < KMainViewHeight - 14)
         {
             SetDrawColor(KColor_RGB(120, 135, 155));
             vm_graphic_textout_to_layer(g_layer, 60, msgY, (VMWSTR)u"(No history yet)", 16);
@@ -1228,7 +1211,7 @@ static void RenderHistoryView(int contentOffsetY)
         if (g_historyTop < 0) g_historyTop = 0;
         if (g_historyTop > total - 1) g_historyTop = total - 1;
 
-        int curY = 42 + contentOffsetY;
+        int curY = 42 + offsetY;
         for (int i = g_historyTop; i < total && i < g_historyTop + maxVisible; i++)
         {
             const THistoryItem& item = g_engine.HistoryItem(i);
@@ -1244,19 +1227,19 @@ static void RenderHistoryView(int contentOffsetY)
                 borderCol = BlendRGB565(KColor_RGB(190, 205, 225), KColor_RGB(240, 160, 20), t);
             }
 
-            if (curY < 296 && curY + itemH > KContentViewTop)
+            if (curY < KMainViewHeight && curY + itemH > 0)
             {
                 DrawClippedRect(g_layer, 8, curY, 224, itemH - 4, borderCol, bgCol);
 
                 // Expression
-                if (curY + 4 >= KContentViewTop && curY + 4 < 296 - 14)
+                if (curY + 4 >= 0 && curY + 4 < KMainViewHeight - 14)
                 {
                     SetDrawColor(KColor_RGB(60, 75, 95));
                     vm_graphic_textout_to_layer(g_layer, 12, curY + 4, (VMWSTR)item.iExpression, w_strlen(item.iExpression));
                 }
 
                 // Result
-                if (curY + 22 >= KContentViewTop && curY + 22 < 296 - 14)
+                if (curY + 22 >= 0 && curY + 22 < KMainViewHeight - 14)
                 {
                     SetDrawColor(KColor_RGB(20, 120, 50));
                     VMWCHAR resLine[KMaxResultLen + 4] = {0};
@@ -1274,8 +1257,36 @@ static void RenderHistoryView(int contentOffsetY)
         }
     }
 
-    // Restore full layer clipping
+    // Restore full screen clip
     vm_graphic_set_clip(0, 0, KScreenWidth, KScreenHeight);
+}
+
+static void DrawTaskbar(bool isHistoryView)
+{
+    // Taskbar (Y: 296 to 319) - Aero Frosted Bar
+    DrawRoundRect(g_layer, 0, KTaskbarTop, KScreenWidth, KTaskbarHeight, 0, KColor_RGB(165, 188, 215), KColor_RGB(205, 220, 238));
+
+    if (isHistoryView)
+    {
+        SetDrawColor(KColor_RGB(165, 35, 45)); // Left Softkey: Clr&Close
+        vm_graphic_textout_to_layer(g_layer, 6, 300, (VMWSTR)u"Clr&Close", 9);
+
+        SetDrawColor(KColor_RGB(30, 60, 105)); // Right Softkey: Back
+        int backW = vm_graphic_get_string_width((VMWSTR)u"Back");
+        vm_graphic_textout_to_layer(g_layer, KScreenWidth - backW - 6, 300, (VMWSTR)u"Back", 4);
+    }
+    else
+    {
+        SetDrawColor(KColor_RGB(30, 60, 105)); // Left Softkey: History
+        vm_graphic_textout_to_layer(g_layer, 6, 300, (VMWSTR)u"History", 7);
+
+        // Right Softkey: "Clear" if expression has characters, "Exit" if empty
+        bool hasChars = (w_strlen(g_expression) > 0 || g_result[0] != 0);
+        const VMWCHAR* rskLabel = hasChars ? (const VMWCHAR*)u"Clear" : (const VMWCHAR*)u"Exit";
+        SetDrawColor(KColor_RGB(165, 35, 45));
+        int rskW = vm_graphic_get_string_width((VMWSTR)rskLabel);
+        vm_graphic_textout_to_layer(g_layer, KScreenWidth - rskW - 6, 300, (VMWSTR)rskLabel, w_strlen(rskLabel));
+    }
 }
 
 static void RenderScreen(void)
@@ -1286,24 +1297,28 @@ static void RenderScreen(void)
     {
         if (g_viewMode == EViewNormal)
         {
-            RenderNormalView();
+            RenderCalculatorMain();
+            DrawTaskbar(false);
         }
         else
         {
-            RenderHistoryView(0);
+            RenderHistoryMain(0);
+            DrawTaskbar(true);
         }
     }
     else if (g_slideState == ESlideOpening)
     {
-        // 1. Calculator view remains stationary in background
-        RenderNormalView();
-        // 2. History content slides UP inside middle viewport (bars stay stationary)
-        RenderHistoryView(g_slideOffsetY);
+        // 1. Calculator main elements stationary in background
+        RenderCalculatorMain();
+        // 2. History main elements slide UP over main area
+        RenderHistoryMain(g_slideOffsetY);
+        // 3. Stationary Taskbar at bottom with History softkeys
+        DrawTaskbar(true);
     }
     else if (g_slideState == ESlideClosing)
     {
         // Fade In Out: Fade In intensity 2, Fade Out intensity 4
-        RenderNormalView();
+        RenderCalculatorMain();
 
         float t = (float)g_slideFrame / (float)KSlideTotalFrames;
         float f_out = (1.0f - t) * (1.0f - t) * (1.0f - t) * (1.0f - t); // Fade Out intensity 4
@@ -1317,8 +1332,8 @@ static void RenderScreen(void)
             VMUINT16* fb = (VMUINT16*)vm_graphic_get_layer_buffer(g_layer);
             if (fb != NULL)
             {
-                int totalPx = KScreenWidth * KContentViewHeight;
-                VMUINT16* dst = fb + KContentViewTop * KScreenWidth;
+                int totalPx = KScreenWidth * KMainViewHeight;
+                VMUINT16* dst = fb;
                 const VMUINT16* src = s_historyBackdrop;
                 for (int p = 0; p < totalPx; p++)
                 {
@@ -1326,6 +1341,9 @@ static void RenderScreen(void)
                 }
             }
         }
+
+        // Stationary Taskbar at bottom with Calculator softkeys
+        DrawTaskbar(false);
     }
 
     // Flush layer to screen
