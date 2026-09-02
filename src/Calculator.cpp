@@ -1278,7 +1278,7 @@ static void RenderHistoryMain(int offsetY)
 
 static void DrawTaskbar(bool isHistoryView)
 {
-    // Taskbar (Y: 296 to 319) - Light Gray Palette with Single Center Divider and Black Text
+    // Taskbar (Y: 296 to 319) - Light Gray Palette with Dynamic Adjacent Vertical Dividers
     // 1. Top border divider line (same divider color as other buttons)
     SetDrawColor(KColor_RGB(160, 182, 208));
     vm_graphic_line_ex(g_layer, 0, KTaskbarTop, KScreenWidth - 1, KTaskbarTop);
@@ -1289,42 +1289,50 @@ static void DrawTaskbar(bool isHistoryView)
     SetDrawColor(KColor_RGB(230, 234, 240)); // Soft gray bottom
     vm_graphic_fill_rect_ex(g_layer, 0, KTaskbarTop + 12, KScreenWidth, 12);
 
-    // 3. Single vertical divider line in the middle
-    SetDrawColor(KColor_RGB(160, 182, 208));
-    vm_graphic_line_ex(g_layer, 120, KTaskbarTop + 1, 120, KScreenHeight - 1);
-
-    // 4. Softkey labels (Pure Black Text)
     vm_graphic_set_font(VM_SMALL_FONT);
     vm_font_set_font_size(VM_SMALL_FONT);
     int fontH = vm_graphic_get_character_height();
     if (fontH <= 0 || fontH > 24) fontH = 14;
     int txtY = KTaskbarTop + (KTaskbarHeight - fontH) / 2;
 
-    SetDrawColor(KColor_RGB(0, 0, 0)); // All taskbar text is black
+    const VMWCHAR* lskText = NULL;
+    int lskLen = 0;
+    const VMWCHAR* rskText = NULL;
+    int rskLen = 0;
 
     if (isHistoryView)
     {
-        // Left Softkey: "Clr&Close"
-        const VMWCHAR* lskText = (const VMWCHAR*)u"Clr&Close";
-        vm_graphic_textout_to_layer(g_layer, 8, txtY, (VMWSTR)lskText, 9);
-
-        // Right Softkey: "Back"
-        const VMWCHAR* rskText = (const VMWCHAR*)u"Back";
-        int rskW = vm_graphic_get_string_width((VMWSTR)rskText);
-        vm_graphic_textout_to_layer(g_layer, KScreenWidth - rskW - 8, txtY, (VMWSTR)rskText, 4);
+        lskText = (const VMWCHAR*)u"Clr&Close";
+        lskLen = 9;
+        rskText = (const VMWCHAR*)u"Back";
+        rskLen = 4;
     }
     else
     {
-        // Left Softkey: "History"
-        const VMWCHAR* lskText = (const VMWCHAR*)u"History";
-        vm_graphic_textout_to_layer(g_layer, 8, txtY, (VMWSTR)lskText, 7);
-
-        // Right Softkey: "Clear" or "Exit"
+        lskText = (const VMWCHAR*)u"History";
+        lskLen = 7;
         bool hasChars = (w_strlen(g_expression) > 0 || g_result[0] != 0);
-        const VMWCHAR* rskText = hasChars ? (const VMWCHAR*)u"Clear" : (const VMWCHAR*)u"Exit";
-        int rskW = vm_graphic_get_string_width((VMWSTR)rskText);
-        vm_graphic_textout_to_layer(g_layer, KScreenWidth - rskW - 8, txtY, (VMWSTR)rskText, w_strlen(rskText));
+        rskText = hasChars ? (const VMWCHAR*)u"Clear" : (const VMWCHAR*)u"Exit";
+        rskLen = w_strlen(rskText);
     }
+
+    int lskW = vm_graphic_get_string_width((VMWSTR)lskText);
+    int rskW = vm_graphic_get_string_width((VMWSTR)rskText);
+
+    // 3. Two dynamic vertical divider lines placed adjacent to the texts
+    SetDrawColor(KColor_RGB(160, 182, 208));
+    // Left divider (placed immediately to the right of left text with padding)
+    int leftDividerX = 8 + lskW + 8;
+    vm_graphic_line_ex(g_layer, leftDividerX, KTaskbarTop + 1, leftDividerX, KScreenHeight - 1);
+
+    // Right divider (placed immediately to the left of right text with padding)
+    int rightDividerX = (KScreenWidth - rskW - 8) - 8;
+    vm_graphic_line_ex(g_layer, rightDividerX, KTaskbarTop + 1, rightDividerX, KScreenHeight - 1);
+
+    // 4. Softkey labels (Pure Black Text)
+    SetDrawColor(KColor_RGB(0, 0, 0));
+    vm_graphic_textout_to_layer(g_layer, 8, txtY, (VMWSTR)lskText, lskLen);
+    vm_graphic_textout_to_layer(g_layer, KScreenWidth - rskW - 8, txtY, (VMWSTR)rskText, rskLen);
 }
 
 static void RenderScreen(void)
