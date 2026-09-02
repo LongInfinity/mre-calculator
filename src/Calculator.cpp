@@ -81,8 +81,8 @@ static int g_slideOffsetY = 0; // 0 .. 320 (History Y offset)
 static VMINT g_slideTimer = -1;
 
 // Directional Key Hold and Diagonal Navigation
-static const int KKeyHoldInitialDelayMs = 333; // Initial delay before repeating (333ms)
-static const int KKeyHoldRepeatIntervalMs = 100; // Continuous step interval (100ms)
+static const int KKeyHoldInitialDelayMs = 500; // Initial delay before repeating (500ms)
+static const int KKeyHoldRepeatIntervalMs = 166; // Continuous step interval (166ms)
 static bool g_keyUpHeld = false;
 static bool g_keyDownHeld = false;
 static bool g_keyLeftHeld = false;
@@ -483,13 +483,17 @@ static int w_strlen(const VMWCHAR* s)
     return len;
 }
 
-static void w_strcpy(VMWCHAR* dest, const VMWCHAR* src)
+static void w_strcpy(VMWCHAR* dest, const VMWCHAR* src, int maxLen = KMaxExprLen)
 {
+    if (!dest) return;
     int i = 0;
-    while (src && src[i] != 0)
+    if (src)
     {
-        dest[i] = src[i];
-        i++;
+        while (src[i] != 0 && i < maxLen - 1)
+        {
+            dest[i] = src[i];
+            i++;
+        }
     }
     dest[i] = 0;
 }
@@ -867,6 +871,7 @@ static void SetDrawColor(VMUINT16 c565)
 
 static void DrawRoundRect(VMINT layer, int x, int y, int w, int h, int r, VMUINT16 borderCol, VMUINT16 fillCol)
 {
+    if (y >= KScreenHeight || y + h <= 0 || x >= KScreenWidth || x + w <= 0) return;
     SetDrawColor(fillCol);
     vm_graphic_fill_rect_ex(layer, x, y, w, h);
     SetDrawColor(borderCol);
@@ -876,27 +881,55 @@ static void DrawRoundRect(VMINT layer, int x, int y, int w, int h, int r, VMUINT
 // 1-pixel clipped rounded corner rectangle
 static void DrawClippedRect(VMINT layer, int x, int y, int w, int h, VMUINT16 borderCol, VMUINT16 fillCol)
 {
+    if (y >= KScreenHeight || y + h <= 0 || x >= KScreenWidth || x + w <= 0) return;
+
     // Top row (corners clipped by 1px)
     SetDrawColor(fillCol);
-    vm_graphic_fill_rect_ex(layer, x + 1, y, w - 2, 1);
+    if (y >= 0 && y < KScreenHeight)
+    {
+        vm_graphic_fill_rect_ex(layer, x + 1, y, w - 2, 1);
+    }
 
     // Middle rows
-    vm_graphic_fill_rect_ex(layer, x, y + 1, w, h - 2);
+    if (y + 1 < KScreenHeight && y + h - 1 > 0)
+    {
+        int my = (y + 1 < 0) ? 0 : y + 1;
+        int mh = (y + h - 1 > KScreenHeight) ? (KScreenHeight - my) : (y + h - 1 - my);
+        if (mh > 0)
+        {
+            vm_graphic_fill_rect_ex(layer, x, my, w, mh);
+        }
+    }
 
     // Bottom row (corners clipped by 1px)
-    vm_graphic_fill_rect_ex(layer, x + 1, y + h - 1, w - 2, 1);
+    if (y + h - 1 >= 0 && y + h - 1 < KScreenHeight)
+    {
+        vm_graphic_fill_rect_ex(layer, x + 1, y + h - 1, w - 2, 1);
+    }
 
     // 1-pixel clipped border lines (corners removed)
     SetDrawColor(borderCol);
-    vm_graphic_line_ex(layer, x + 1, y, x + w - 2, y);                 // Top border
-    vm_graphic_line_ex(layer, x + 1, y + h - 1, x + w - 2, y + h - 1); // Bottom border
-    vm_graphic_line_ex(layer, x, y + 1, x, y + h - 2);                 // Left border
-    vm_graphic_line_ex(layer, x + w - 1, y + 1, x + w - 1, y + h - 2); // Right border
+    if (y >= 0 && y < KScreenHeight)
+    {
+        vm_graphic_line_ex(layer, x + 1, y, x + w - 2, y); // Top border
+    }
+    if (y + h - 1 >= 0 && y + h - 1 < KScreenHeight)
+    {
+        vm_graphic_line_ex(layer, x + 1, y + h - 1, x + w - 2, y + h - 1); // Bottom border
+    }
+    int ly1 = (y + 1 < 0) ? 0 : y + 1;
+    int ly2 = (y + h - 2 >= KScreenHeight) ? (KScreenHeight - 1) : y + h - 2;
+    if (ly2 >= ly1)
+    {
+        vm_graphic_line_ex(layer, x, ly1, x, ly2);                 // Left border
+        vm_graphic_line_ex(layer, x + w - 1, ly1, x + w - 1, ly2); // Right border
+    }
 }
 
 // 1-pixel clipped rounded corner button with Windows 7 Aero two-tone split
 static void DrawClippedButton(VMINT layer, int x, int y, int w, int h, VMUINT16 borderCol, VMUINT16 fillTop, VMUINT16 fillBottom)
 {
+    if (y >= KScreenHeight || y + h <= 0 || x >= KScreenWidth || x + w <= 0) return;
     int halfH = h / 2; // 16px
 
     // Top half (lighter aero glass tone)
@@ -934,23 +967,46 @@ static inline int GetColW(int c)
 static void DrawTitleBar(VMINT layer, int offsetY, const VMWCHAR* titleText)
 {
     int y = offsetY;
+    if (y >= KScreenHeight || y + 34 <= 0) return;
 
     // Windows 7 Aero Glass Title Bar (Height: 34px, Width: 240px)
     // Top highlight line
-    SetDrawColor(KColor_RGB(232, 242, 254));
-    vm_graphic_line_ex(layer, 0, y, KScreenWidth - 1, y);
+    if (y >= 0 && y < KScreenHeight)
+    {
+        SetDrawColor(KColor_RGB(232, 242, 254));
+        vm_graphic_line_ex(layer, 0, y, KScreenWidth - 1, y);
+    }
 
     // Top half tone (16px)
-    SetDrawColor(KColor_RGB(206, 224, 246));
-    vm_graphic_fill_rect_ex(layer, 0, y + 1, KScreenWidth, 16);
+    if (y + 1 < KScreenHeight && y + 17 > 0)
+    {
+        int fy = (y + 1 < 0) ? 0 : y + 1;
+        int fh = (y + 17 > KScreenHeight) ? (KScreenHeight - fy) : (y + 17 - fy);
+        if (fh > 0)
+        {
+            SetDrawColor(KColor_RGB(206, 224, 246));
+            vm_graphic_fill_rect_ex(layer, 0, fy, KScreenWidth, fh);
+        }
+    }
 
     // Bottom half tone (16px)
-    SetDrawColor(KColor_RGB(180, 204, 234));
-    vm_graphic_fill_rect_ex(layer, 0, y + 17, KScreenWidth, 16);
+    if (y + 17 < KScreenHeight && y + 33 > 0)
+    {
+        int fy = (y + 17 < 0) ? 0 : y + 17;
+        int fh = (y + 33 > KScreenHeight) ? (KScreenHeight - fy) : (y + 33 - fy);
+        if (fh > 0)
+        {
+            SetDrawColor(KColor_RGB(180, 204, 234));
+            vm_graphic_fill_rect_ex(layer, 0, fy, KScreenWidth, fh);
+        }
+    }
 
     // Bottom border line
-    SetDrawColor(KColor_RGB(145, 172, 204));
-    vm_graphic_line_ex(layer, 0, y + 33, KScreenWidth - 1, y + 33);
+    if (y + 33 >= 0 && y + 33 < KScreenHeight)
+    {
+        SetDrawColor(KColor_RGB(145, 172, 204));
+        vm_graphic_line_ex(layer, 0, y + 33, KScreenWidth - 1, y + 33);
+    }
 
     // Draw Windows 7 Calculator Icon (24x24) from install.wim (vertically centered in 34px bar: Y = y + 5)
     VMUINT16* fb = (VMUINT16*)vm_graphic_get_layer_buffer(layer);
@@ -997,11 +1053,14 @@ static void DrawTitleBar(VMINT layer, int offsetY, const VMWCHAR* titleText)
     SetDrawColor(KColor_RGB(20, 45, 85));
 
     int txtH = vm_graphic_get_character_height();
-    if (txtH <= 0 || txtH > 34) txtH = 12;
+    if (txtH <= 0 || txtH > 34) txtH = 14;
     int txtY = y + (34 - txtH) / 2;
     int txtX = 8 + KCALC_ICON_W + 6; // 38px
 
-    vm_graphic_textout_to_layer(layer, txtX, txtY, (VMWSTR)titleText, w_strlen(titleText));
+    if (txtY >= 0 && txtY < KScreenHeight - txtH)
+    {
+        vm_graphic_textout_to_layer(layer, txtX, txtY, (VMWSTR)titleText, w_strlen(titleText));
+    }
 }
 
 static void RenderNormalView(void)
@@ -1045,6 +1104,8 @@ static void RenderNormalView(void)
     int btnH = 32;
     int startY = 82;
     int gapY = 3;
+    int fontH = vm_graphic_get_character_height();
+    if (fontH <= 0 || fontH > btnH) fontH = 14;
 
     for (int r = 0; r < KGridRows; r++)
     {
@@ -1091,7 +1152,8 @@ static void RenderNormalView(void)
             SetDrawColor(textCol);
             int txtW = vm_graphic_get_string_width((VMWSTR)labelText);
             int txtX = bx + (bw - txtW) / 2;
-            int txtY = by + (btnH - 12) / 2;
+            int txtY = by + (btnH - fontH) / 2;
+            if (txtX < bx + 1) txtX = bx + 1;
             vm_graphic_textout_to_layer(g_layer, txtX, txtY, (VMWSTR)labelText, w_strlen(labelText));
         }
     }
@@ -1113,10 +1175,15 @@ static void RenderNormalView(void)
 static void RenderHistoryView(int offsetY)
 {
     // Background overlay container (covers the underlying calculator view)
-    SetDrawColor(KColor_RGB(218, 228, 242));
-    vm_graphic_fill_rect_ex(g_layer, 0, offsetY, KScreenWidth, KScreenHeight);
+    int bgY = (offsetY < 0) ? 0 : offsetY;
+    int bgH = (bgY < KScreenHeight) ? (KScreenHeight - bgY) : 0;
+    if (bgH > 0)
+    {
+        SetDrawColor(KColor_RGB(218, 228, 242));
+        vm_graphic_fill_rect_ex(g_layer, 0, bgY, KScreenWidth, bgH);
+    }
 
-    // 1. Title Bar (Height: 36px, Width: 240px with Windows 7 Icon)
+    // 1. Title Bar (Height: 34px, Width: 240px with Windows 7 Icon)
     DrawTitleBar(g_layer, offsetY, (const VMWCHAR*)u"History");
 
     // Force system small font
@@ -1129,8 +1196,12 @@ static void RenderHistoryView(int offsetY)
     int total = g_engine.HistoryCount();
     if (total == 0)
     {
-        SetDrawColor(KColor_RGB(120, 135, 155));
-        vm_graphic_textout_to_layer(g_layer, 60, 138 + offsetY, (VMWSTR)u"(No history yet)", 16);
+        int msgY = 138 + offsetY;
+        if (msgY >= 0 && msgY < KScreenHeight - 14)
+        {
+            SetDrawColor(KColor_RGB(120, 135, 155));
+            vm_graphic_textout_to_layer(g_layer, 60, msgY, (VMWSTR)u"(No history yet)", 16);
+        }
     }
     else
     {
@@ -1155,36 +1226,52 @@ static void RenderHistoryView(int offsetY)
                 borderCol = BlendRGB565(KColor_RGB(190, 205, 225), KColor_RGB(240, 160, 20), t);
             }
 
-            DrawClippedRect(g_layer, 8, curY, 224, itemH - 4, borderCol, bgCol);
+            if (curY < KScreenHeight && curY + itemH > 0)
+            {
+                DrawClippedRect(g_layer, 8, curY, 224, itemH - 4, borderCol, bgCol);
 
-            // Expression
-            SetDrawColor(KColor_RGB(60, 75, 95));
-            vm_graphic_textout_to_layer(g_layer, 12, curY + 4, (VMWSTR)item.iExpression, w_strlen(item.iExpression));
+                // Expression
+                if (curY + 4 >= 0 && curY + 4 < KScreenHeight - 14)
+                {
+                    SetDrawColor(KColor_RGB(60, 75, 95));
+                    vm_graphic_textout_to_layer(g_layer, 12, curY + 4, (VMWSTR)item.iExpression, w_strlen(item.iExpression));
+                }
 
-            // Result
-            SetDrawColor(KColor_RGB(20, 120, 50));
-            VMWCHAR resLine[KMaxResultLen + 4] = {0};
-            resLine[0] = '=';
-            resLine[1] = ' ';
-            w_strcpy(resLine + 2, item.iResult);
-            int rw = vm_graphic_get_string_width((VMWSTR)resLine);
-            int rx = 224 - rw;
-            if (rx < 12) rx = 12;
-            vm_graphic_textout_to_layer(g_layer, rx, curY + 22, (VMWSTR)resLine, w_strlen(resLine));
+                // Result
+                if (curY + 22 >= 0 && curY + 22 < KScreenHeight - 14)
+                {
+                    SetDrawColor(KColor_RGB(20, 120, 50));
+                    VMWCHAR resLine[KMaxResultLen + 4] = {0};
+                    resLine[0] = '=';
+                    resLine[1] = ' ';
+                    w_strcpy(resLine + 2, item.iResult, KMaxResultLen);
+                    int rw = vm_graphic_get_string_width((VMWSTR)resLine);
+                    int rx = 224 - rw;
+                    if (rx < 12) rx = 12;
+                    vm_graphic_textout_to_layer(g_layer, rx, curY + 22, (VMWSTR)resLine, w_strlen(resLine));
+                }
+            }
 
             curY += itemH;
         }
     }
 
     // 3. Bottom Softkeys in History View (LSK: Clr&Close, RSK: Back)
-    DrawRoundRect(g_layer, 0, 296 + offsetY, KScreenWidth, 24, 0, KColor_RGB(165, 188, 215), KColor_RGB(205, 220, 238));
+    int skY = 296 + offsetY;
+    if (skY < KScreenHeight && skY + 24 > 0)
+    {
+        DrawRoundRect(g_layer, 0, skY, KScreenWidth, 24, 0, KColor_RGB(165, 188, 215), KColor_RGB(205, 220, 238));
 
-    SetDrawColor(KColor_RGB(165, 35, 45)); // Left Softkey: Clr&Close
-    vm_graphic_textout_to_layer(g_layer, 6, 300 + offsetY, (VMWSTR)u"Clr&Close", 9);
+        if (skY + 4 >= 0 && skY + 4 < KScreenHeight - 14)
+        {
+            SetDrawColor(KColor_RGB(165, 35, 45)); // Left Softkey: Clr&Close
+            vm_graphic_textout_to_layer(g_layer, 6, skY + 4, (VMWSTR)u"Clr&Close", 9);
 
-    SetDrawColor(KColor_RGB(30, 60, 105)); // Right Softkey: Back
-    int backW = vm_graphic_get_string_width((VMWSTR)u"Back");
-    vm_graphic_textout_to_layer(g_layer, KScreenWidth - backW - 6, 300 + offsetY, (VMWSTR)u"Back", 4);
+            SetDrawColor(KColor_RGB(30, 60, 105)); // Right Softkey: Back
+            int backW = vm_graphic_get_string_width((VMWSTR)u"Back");
+            vm_graphic_textout_to_layer(g_layer, KScreenWidth - backW - 6, skY + 4, (VMWSTR)u"Back", 4);
+        }
+    }
 }
 
 static void RenderScreen(void)

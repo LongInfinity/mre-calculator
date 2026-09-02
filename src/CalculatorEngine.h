@@ -48,7 +48,15 @@ public:
 
     // History
     int HistoryCount() const { return iHistoryCount; }
-    const THistoryItem& HistoryItem(int aIndex) const { return iHistory[aIndex]; }
+    const THistoryItem& HistoryItem(int aIndex) const
+    {
+        static const THistoryItem s_emptyItem = {{0}, {0}};
+        if (aIndex < 0 || aIndex >= iHistoryCount || aIndex >= KMaxHistoryItems)
+        {
+            return s_emptyItem;
+        }
+        return iHistory[aIndex];
+    }
     void AddHistory(const VMWCHAR* aExpr, const VMWCHAR* aRes);
     void ClearHistory() { iHistoryCount = 0; }
 
