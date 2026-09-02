@@ -955,42 +955,6 @@ static void DrawClippedButton(VMINT layer, int x, int y, int w, int h, VMUINT16 
     vm_graphic_line_ex(layer, x + w - 1, y + 1, x + w - 1, y + h - 2); // Right border (col x+w-1)
 }
 
-// Windows 7 Aero Menu / Toolbar Button Pill (2px rounded corners with two-tone soft glass fill)
-static void DrawMenuButtonPill(VMINT layer, int x, int y, int w, int h, VMUINT16 borderCol, VMUINT16 fillTop, VMUINT16 fillBottom)
-{
-    if (y >= KScreenHeight || y + h <= 0 || x >= KScreenWidth || x + w <= 0) return;
-    int halfH = h / 2;
-
-    // Top half fill
-    SetDrawColor(fillTop);
-    vm_graphic_fill_rect_ex(layer, x + 2, y + 1, w - 4, 1);
-    if (halfH > 2)
-    {
-        vm_graphic_fill_rect_ex(layer, x + 1, y + 2, w - 2, halfH - 2);
-    }
-
-    // Bottom half fill
-    SetDrawColor(fillBottom);
-    if (h - halfH > 2)
-    {
-        vm_graphic_fill_rect_ex(layer, x + 1, y + halfH, w - 2, h - halfH - 2);
-    }
-    vm_graphic_fill_rect_ex(layer, x + 2, y + h - 2, w - 4, 1);
-
-    // 2px rounded borders
-    SetDrawColor(borderCol);
-    vm_graphic_line_ex(layer, x + 2, y, x + w - 3, y);                 // Top border
-    vm_graphic_line_ex(layer, x + 2, y + h - 1, x + w - 3, y + h - 1); // Bottom border
-    vm_graphic_line_ex(layer, x, y + 2, x, y + h - 3);                 // Left border
-    vm_graphic_line_ex(layer, x + w - 1, y + 2, x + w - 1, y + h - 3); // Right border
-
-    // 2px corner points
-    vm_graphic_line_ex(layer, x + 1, y + 1, x + 1, y + 1);
-    vm_graphic_line_ex(layer, x + w - 2, y + 1, x + w - 2, y + 1);
-    vm_graphic_line_ex(layer, x + 1, y + h - 2, x + 1, y + h - 2);
-    vm_graphic_line_ex(layer, x + w - 2, y + h - 2, x + w - 2, y + h - 2);
-}
-
 static inline int GetColX(int c)
 {
     // Col 0: 4, Col 1: 51, Col 2: 98, Col 3: 145, Col 4: 193
@@ -1314,8 +1278,8 @@ static void RenderHistoryMain(int offsetY)
 
 static void DrawTaskbar(bool isHistoryView)
 {
-    // Taskbar (Y: 296 to 319) - Light Gray Palette with Button Borders matching Keypad
-    // 1. Top border divider line (exact same divider color as keypad buttons)
+    // Taskbar (Y: 296 to 319) - Light Gray Palette with Single Center Divider and Black Text
+    // 1. Top border divider line (same divider color as other buttons)
     SetDrawColor(KColor_RGB(160, 182, 208));
     vm_graphic_line_ex(g_layer, 0, KTaskbarTop, KScreenWidth - 1, KTaskbarTop);
 
@@ -1325,65 +1289,41 @@ static void DrawTaskbar(bool isHistoryView)
     SetDrawColor(KColor_RGB(230, 234, 240)); // Soft gray bottom
     vm_graphic_fill_rect_ex(g_layer, 0, KTaskbarTop + 12, KScreenWidth, 12);
 
+    // 3. Single vertical divider line in the middle
+    SetDrawColor(KColor_RGB(160, 182, 208));
+    vm_graphic_line_ex(g_layer, 120, KTaskbarTop + 1, 120, KScreenHeight - 1);
+
+    // 4. Softkey labels (Pure Black Text)
     vm_graphic_set_font(VM_SMALL_FONT);
     vm_font_set_font_size(VM_SMALL_FONT);
     int fontH = vm_graphic_get_character_height();
-    if (fontH <= 0 || fontH > 20) fontH = 14;
+    if (fontH <= 0 || fontH > 24) fontH = 14;
+    int txtY = KTaskbarTop + (KTaskbarHeight - fontH) / 2;
 
-    int btnY = KTaskbarTop + 2; // Y = 298
-    int btnH = 21;              // Y: 298 to 318 (-1px from bottom screen edge 319)
-    int txtY = btnY + (btnH - fontH) / 2;
-
-    VMUINT16 borderCol = KColor_RGB(160, 182, 208); // Same divider/border as other buttons
-    VMUINT16 fillTop   = KColor_RGB(252, 253, 255); // Light gray button top
-    VMUINT16 fillBot   = KColor_RGB(236, 240, 246); // Light gray button bottom
-    VMUINT16 textCol   = KColor_RGB(20, 45, 85);
+    SetDrawColor(KColor_RGB(0, 0, 0)); // All taskbar text is black
 
     if (isHistoryView)
     {
         // Left Softkey: "Clr&Close"
         const VMWCHAR* lskText = (const VMWCHAR*)u"Clr&Close";
-        int lskW = vm_graphic_get_string_width((VMWSTR)lskText);
-        int lskBtnW = lskW + 20;
-        int lskX = 1; // -1px from left screen edge
-        DrawMenuButtonPill(g_layer, lskX, btnY, lskBtnW, btnH,
-            KColor_RGB(215, 170, 175), KColor_RGB(254, 244, 245), KColor_RGB(252, 234, 236));
-        SetDrawColor(KColor_RGB(165, 35, 45));
-        int lTxtX = lskX + (lskBtnW - lskW) / 2;
-        vm_graphic_textout_to_layer(g_layer, lTxtX, txtY, (VMWSTR)lskText, 9);
+        vm_graphic_textout_to_layer(g_layer, 8, txtY, (VMWSTR)lskText, 9);
 
         // Right Softkey: "Back"
         const VMWCHAR* rskText = (const VMWCHAR*)u"Back";
         int rskW = vm_graphic_get_string_width((VMWSTR)rskText);
-        int rskBtnW = rskW + 20;
-        int rskX = KScreenWidth - rskBtnW - 1; // -1px from right screen edge
-        DrawMenuButtonPill(g_layer, rskX, btnY, rskBtnW, btnH, borderCol, fillTop, fillBot);
-        SetDrawColor(textCol);
-        int rTxtX = rskX + (rskBtnW - rskW) / 2;
-        vm_graphic_textout_to_layer(g_layer, rTxtX, txtY, (VMWSTR)rskText, 4);
+        vm_graphic_textout_to_layer(g_layer, KScreenWidth - rskW - 8, txtY, (VMWSTR)rskText, 4);
     }
     else
     {
         // Left Softkey: "History"
         const VMWCHAR* lskText = (const VMWCHAR*)u"History";
-        int lskW = vm_graphic_get_string_width((VMWSTR)lskText);
-        int lskBtnW = lskW + 20;
-        int lskX = 1; // -1px from left screen edge
-        DrawMenuButtonPill(g_layer, lskX, btnY, lskBtnW, btnH, borderCol, fillTop, fillBot);
-        SetDrawColor(textCol);
-        int lTxtX = lskX + (lskBtnW - lskW) / 2;
-        vm_graphic_textout_to_layer(g_layer, lTxtX, txtY, (VMWSTR)lskText, 7);
+        vm_graphic_textout_to_layer(g_layer, 8, txtY, (VMWSTR)lskText, 7);
 
         // Right Softkey: "Clear" or "Exit"
         bool hasChars = (w_strlen(g_expression) > 0 || g_result[0] != 0);
         const VMWCHAR* rskText = hasChars ? (const VMWCHAR*)u"Clear" : (const VMWCHAR*)u"Exit";
         int rskW = vm_graphic_get_string_width((VMWSTR)rskText);
-        int rskBtnW = rskW + 20;
-        int rskX = KScreenWidth - rskBtnW - 1; // -1px from right screen edge
-        DrawMenuButtonPill(g_layer, rskX, btnY, rskBtnW, btnH, borderCol, fillTop, fillBot);
-        SetDrawColor(hasChars ? KColor_RGB(165, 35, 45) : textCol);
-        int rTxtX = rskX + (rskBtnW - rskW) / 2;
-        vm_graphic_textout_to_layer(g_layer, rTxtX, txtY, (VMWSTR)rskText, w_strlen(rskText));
+        vm_graphic_textout_to_layer(g_layer, KScreenWidth - rskW - 8, txtY, (VMWSTR)rskText, w_strlen(rskText));
     }
 }
 
