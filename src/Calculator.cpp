@@ -428,14 +428,15 @@ static void OnSlideTimer(VMINT tid)
         }
         else
         {
-            // Ease In-Out motion: In intensity 0.25 (fast initial burst), Out intensity 4 (quartic)
+            // Ease In-Out motion: In intensity 4 (high acceleration rate), Out intensity 4 (quartic deceleration)
             float t = (float)g_slideFrame / (float)KSlideTotalFrames;
             float progress;
             if (t < 0.5f)
             {
-                // Ease In (intensity 0.25): 0.5 * (2t)^0.25 = 0.5 * sqrt(sqrt(2t))
+                // Ease In (high acceleration rate 4): 0.5 * (2t)^4
                 float t2 = 2.0f * t;
-                progress = 0.5f * sqrtf(sqrtf(t2));
+                float t4 = t2 * t2 * t2 * t2;
+                progress = 0.5f * t4;
             }
             else
             {
