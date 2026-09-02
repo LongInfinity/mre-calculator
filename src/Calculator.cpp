@@ -427,14 +427,13 @@ static void OnSlideTimer(VMINT tid)
         }
         else
         {
-            // Ease In-Out motion: In intensity 2 (quadratic), Out intensity 4 (quartic)
+            // Ease In-Out motion: In intensity 1 (linear ramp), Out intensity 4 (quartic)
             float t = (float)g_slideFrame / (float)KSlideTotalFrames;
             float progress;
             if (t < 0.5f)
             {
-                // Ease In (intensity 2): 0.5 * (2t)^2
-                float t2 = 2.0f * t;
-                progress = 0.5f * (t2 * t2);
+                // Ease In (intensity 1): 0.5 * (2t)^1 = t
+                progress = t;
             }
             else
             {
@@ -902,28 +901,16 @@ static void DrawClippedRect(VMINT layer, int x, int y, int w, int h, VMUINT16 bo
 {
     if (y >= KScreenHeight || y + h <= 0 || x >= KScreenWidth || x + w <= 0) return;
 
-    // Top row (corners clipped by 1px)
-    SetDrawColor(fillCol);
-    if (y >= 0 && y < KScreenHeight)
-    {
-        vm_graphic_fill_rect_ex(layer, x + 1, y, w - 2, 1);
-    }
-
-    // Middle rows
+    // Fill inner rectangle (strictly inside borders: x+1..x+w-2, y+1..y+h-2)
     if (y + 1 < KScreenHeight && y + h - 1 > 0)
     {
         int my = (y + 1 < 0) ? 0 : y + 1;
         int mh = (y + h - 1 > KScreenHeight) ? (KScreenHeight - my) : (y + h - 1 - my);
-        if (mh > 0)
+        if (mh > 0 && w > 2)
         {
-            vm_graphic_fill_rect_ex(layer, x, my, w, mh);
+            SetDrawColor(fillCol);
+            vm_graphic_fill_rect_ex(layer, x + 1, my, w - 2, mh);
         }
-    }
-
-    // Bottom row (corners clipped by 1px)
-    if (y + h - 1 >= 0 && y + h - 1 < KScreenHeight)
-    {
-        vm_graphic_fill_rect_ex(layer, x + 1, y + h - 1, w - 2, 1);
     }
 
     // 1-pixel clipped border lines (corners removed)
@@ -951,22 +938,20 @@ static void DrawClippedButton(VMINT layer, int x, int y, int w, int h, VMUINT16 
     if (y >= KScreenHeight || y + h <= 0 || x >= KScreenWidth || x + w <= 0) return;
     int halfH = h / 2; // 16px
 
-    // Top half (lighter aero glass tone)
+    // Top half (lighter aero glass tone) - strictly inside inner area [x+1 .. x+w-2], [y+1 .. y+halfH-1]
     SetDrawColor(fillTop);
-    vm_graphic_fill_rect_ex(layer, x + 1, y, w - 2, 1);
-    vm_graphic_fill_rect_ex(layer, x, y + 1, w, halfH - 1);
+    vm_graphic_fill_rect_ex(layer, x + 1, y + 1, w - 2, halfH - 1);
 
-    // Bottom half (deeper aero glass base)
+    // Bottom half (deeper aero glass base) - strictly inside inner area [x+1 .. x+w-2], [y+halfH .. y+h-2]
     SetDrawColor(fillBottom);
-    vm_graphic_fill_rect_ex(layer, x, y + halfH, w, h - halfH - 1);
-    vm_graphic_fill_rect_ex(layer, x + 1, y + h - 1, w - 2, 1);
+    vm_graphic_fill_rect_ex(layer, x + 1, y + halfH, w - 2, h - halfH - 1);
 
     // 1-pixel clipped border lines (corners removed)
     SetDrawColor(borderCol);
-    vm_graphic_line_ex(layer, x + 1, y, x + w - 2, y);                 // Top border
-    vm_graphic_line_ex(layer, x + 1, y + h - 1, x + w - 2, y + h - 1); // Bottom border
-    vm_graphic_line_ex(layer, x, y + 1, x, y + h - 2);                 // Left border
-    vm_graphic_line_ex(layer, x + w - 1, y + 1, x + w - 1, y + h - 2); // Right border
+    vm_graphic_line_ex(layer, x + 1, y, x + w - 2, y);                 // Top border (row y)
+    vm_graphic_line_ex(layer, x + 1, y + h - 1, x + w - 2, y + h - 1); // Bottom border (row y+h-1)
+    vm_graphic_line_ex(layer, x, y + 1, x, y + h - 2);                 // Left border (col x)
+    vm_graphic_line_ex(layer, x + w - 1, y + 1, x + w - 1, y + h - 2); // Right border (col x+w-1)
 }
 
 static inline int GetColX(int c)
