@@ -78,11 +78,11 @@ static bool s_iconPreblended = false;
 enum TSlideDirection
 {
     ESlideNone,
-    ESlideOpening, // Normal -> History (History slides UP from bottom as overlay: +320 -> 0)
-    ESlideClosing  // History -> Normal (History slides DOWN to bottom: 0 -> +320)
+    ESlideOpening, // Normal -> History (History slides UP from bottom as overlay: +296 -> 0)
+    ESlideClosing  // History -> Normal (History slides DOWN to bottom: 0 -> +296)
 };
 
-static const int KSlideTotalFrames = 10; // 10 frames * ~16.7ms = 166.7ms (1/6s)
+static const int KSlideTotalFrames = 5; // 5 frames * 33.3ms = 166.7ms (1/6s)
 static const int KMainViewHeight = 296; // Main calculation / history area (Y: 0..295)
 static const int KTaskbarTop = 296;     // Stationary taskbar at bottom (Y: 296..319)
 static const int KTaskbarHeight = 24;
@@ -90,7 +90,18 @@ static const int KTaskbarHeight = 24;
 static TSlideDirection g_slideState = ESlideNone;
 static int g_slideFrame = 0;
 static int g_slideOffsetY = 0; // Main area Y offset for opening/closing slide
-static VMINT g_slideTimer = -1;
+
+// Pre-computed button and taskbar text layout caches for 0-overhead repainting
+static int s_btnTxtOffset[KGridRows][KGridCols];
+static int s_btnLabelLen[KGridRows][KGridCols];
+static bool s_btnMetricsCached = false;
+
+static int s_wHistory = 0;
+static int s_wClrClose = 0;
+static int s_wBack = 0;
+static int s_wClear = 0;
+static int s_wExit = 0;
+static bool s_taskbarMetricsCached = false;
 
 // Directional Key Hold and Diagonal Navigation
 static const int KKeyHoldInitialDelayMs = 500; // Initial delay before repeating (500ms)
@@ -148,29 +159,32 @@ static void OnAnimTick(VMINT tid)
 {
     bool active = false;
 
-    // 1. Cursor Glow for Keypad Grid
-    for (int r = 0; r < KGridRows; r++)
+    // 1. Cursor Glow for Keypad Grid (Only when in Normal Calculator View)
+    if (g_viewMode == EViewNormal && g_slideState == ESlideNone)
     {
-        for (int c = 0; c < KGridCols; c++)
+        for (int r = 0; r < KGridRows; r++)
         {
-            if (r == g_selectedRow && c == g_selectedCol)
+            for (int c = 0; c < KGridCols; c++)
             {
-                // Fade In: 83ms (+0.40f per 33ms tick)
-                if (g_btnGlow[r][c] < 1.0f)
+                if (r == g_selectedRow && c == g_selectedCol)
                 {
-                    g_btnGlow[r][c] += 0.40f;
-                    if (g_btnGlow[r][c] > 1.0f) g_btnGlow[r][c] = 1.0f;
-                    active = true;
+                    // Fade In: 83ms (+0.40f per 33ms tick)
+                    if (g_btnGlow[r][c] < 1.0f)
+                    {
+                        g_btnGlow[r][c] += 0.40f;
+                        if (g_btnGlow[r][c] > 1.0f) g_btnGlow[r][c] = 1.0f;
+                        active = true;
+                    }
                 }
-            }
-            else
-            {
-                // Fade Out: 750ms (-0.044f per 33ms tick)
-                if (g_btnGlow[r][c] > 0.0f)
+                else
                 {
-                    g_btnGlow[r][c] -= 0.044f;
-                    if (g_btnGlow[r][c] < 0.0f) g_btnGlow[r][c] = 0.0f;
-                    active = true;
+                    // Fade Out: 750ms (-0.044f per 33ms tick)
+                    if (g_btnGlow[r][c] > 0.0f)
+                    {
+                        g_btnGlow[r][c] -= 0.044f;
+                        if (g_btnGlow[r][c] < 0.0f) g_btnGlow[r][c] = 0.0f;
+                        active = true;
+                    }
                 }
             }
         }
@@ -209,29 +223,32 @@ static void OnAnimTick(VMINT tid)
         }
     }
 
-    // 3. History Item Focus Glow
-    int total = g_engine.HistoryCount();
-    if (total > KMaxHistoryGlow) total = KMaxHistoryGlow;
-    for (int i = 0; i < total; i++)
+    // 3. History Item Focus Glow (Only when in History View)
+    if (g_viewMode == EViewHistory && g_slideState == ESlideNone)
     {
-        if (i == g_historyFocus)
+        int total = g_engine.HistoryCount();
+        if (total > KMaxHistoryGlow) total = KMaxHistoryGlow;
+        for (int i = 0; i < total; i++)
         {
-            // Fade in: 83ms (+0.40f per 33ms tick)
-            if (g_historyGlow[i] < 1.0f)
+            if (i == g_historyFocus)
             {
-                g_historyGlow[i] += 0.40f;
-                if (g_historyGlow[i] > 1.0f) g_historyGlow[i] = 1.0f;
-                active = true;
+                // Fade in: 83ms (+0.40f per 33ms tick)
+                if (g_historyGlow[i] < 1.0f)
+                {
+                    g_historyGlow[i] += 0.40f;
+                    if (g_historyGlow[i] > 1.0f) g_historyGlow[i] = 1.0f;
+                    active = true;
+                }
             }
-        }
-        else
-        {
-            // Fade out: 750ms (-0.044f per 33ms tick)
-            if (g_historyGlow[i] > 0.0f)
+            else
             {
-                g_historyGlow[i] -= 0.044f;
-                if (g_historyGlow[i] < 0.0f) g_historyGlow[i] = 0.0f;
-                active = true;
+                // Fade out: 750ms (-0.044f per 33ms tick)
+                if (g_historyGlow[i] > 0.0f)
+                {
+                    g_historyGlow[i] -= 0.044f;
+                    if (g_historyGlow[i] < 0.0f) g_historyGlow[i] = 0.0f;
+                    active = true;
+                }
             }
         }
     }
@@ -282,6 +299,45 @@ static void OnAnimTick(VMINT tid)
         }
         else
         {
+            active = true;
+        }
+    }
+
+    // 6. Sliding Transition (Unified 30fps animation: 5 frames * 33ms = 165ms Ease-Out Quartic)
+    if (g_slideState == ESlideOpening)
+    {
+        g_slideFrame++;
+        if (g_slideFrame >= KSlideTotalFrames)
+        {
+            g_slideFrame = KSlideTotalFrames;
+            g_slideOffsetY = 0;
+            g_slideState = ESlideNone;
+            g_viewMode = EViewHistory;
+        }
+        else
+        {
+            float rem = 1.0f - (float)g_slideFrame / (float)KSlideTotalFrames;
+            float rem4 = rem * rem * rem * rem;
+            g_slideOffsetY = (int)(KMainViewHeight * rem4 + 0.5f);
+            active = true;
+        }
+    }
+    else if (g_slideState == ESlideClosing)
+    {
+        g_slideFrame++;
+        if (g_slideFrame >= KSlideTotalFrames)
+        {
+            g_slideFrame = KSlideTotalFrames;
+            g_slideOffsetY = KMainViewHeight;
+            g_slideState = ESlideNone;
+            g_viewMode = EViewNormal;
+        }
+        else
+        {
+            float rem = 1.0f - (float)g_slideFrame / (float)KSlideTotalFrames;
+            float rem4 = rem * rem * rem * rem;
+            float progress = 1.0f - rem4;
+            g_slideOffsetY = (int)(KMainViewHeight * progress + 0.5f);
             active = true;
         }
     }
@@ -469,57 +525,6 @@ static void OnExplosionExitTimer(VMINT tid)
     vm_exit_app();
 }
 
-static void OnSlideTimer(VMINT tid)
-{
-    if (g_slideState == ESlideOpening)
-    {
-        g_slideFrame++;
-        if (g_slideFrame >= KSlideTotalFrames)
-        {
-            g_slideFrame = KSlideTotalFrames;
-            g_slideOffsetY = 0;
-            g_slideState = ESlideNone;
-            if (g_slideTimer != -1)
-            {
-                vm_delete_timer(g_slideTimer);
-                g_slideTimer = -1;
-            }
-        }
-        else
-        {
-            // Ease-Out rate 4 (Quartic): main elements slide up into view
-            float rem = 1.0f - (float)g_slideFrame / (float)KSlideTotalFrames;
-            float rem4 = rem * rem * rem * rem;
-            g_slideOffsetY = (int)(KMainViewHeight * rem4 + 0.5f);
-        }
-    }
-    else if (g_slideState == ESlideClosing)
-    {
-        g_slideFrame++;
-        if (g_slideFrame >= KSlideTotalFrames)
-        {
-            g_slideFrame = KSlideTotalFrames;
-            g_slideOffsetY = KMainViewHeight;
-            g_slideState = ESlideNone;
-            g_viewMode = EViewNormal;
-            if (g_slideTimer != -1)
-            {
-                vm_delete_timer(g_slideTimer);
-                g_slideTimer = -1;
-            }
-        }
-        else
-        {
-            // Ease-Out rate 4 (Quartic): Y = H * (1 - (1 - t)^4)
-            float rem = 1.0f - (float)g_slideFrame / (float)KSlideTotalFrames;
-            float rem4 = rem * rem * rem * rem;
-            float progress = 1.0f - rem4;
-            g_slideOffsetY = (int)(KMainViewHeight * progress + 0.5f);
-        }
-    }
-    RenderScreen();
-}
-
 static void OpenHistoryWithAnimation(void)
 {
     if (g_slideState != ESlideNone) return;
@@ -544,10 +549,7 @@ static void OpenHistoryWithAnimation(void)
     g_slideState = ESlideOpening;
     g_slideFrame = 0;
     g_slideOffsetY = KMainViewHeight; // Main elements slide up from bottom (+296)
-    if (g_slideTimer == -1)
-    {
-        g_slideTimer = vm_create_timer(17, OnSlideTimer);
-    }
+    StartAnimTimerIfNeeded();
     RenderScreen();
 }
 
@@ -558,10 +560,7 @@ static void CloseHistoryWithAnimation(void)
     g_slideState = ESlideClosing;
     g_slideFrame = 0;
     g_slideOffsetY = 0; // Starts at 0, slides down to +296
-    if (g_slideTimer == -1)
-    {
-        g_slideTimer = vm_create_timer(17, OnSlideTimer);
-    }
+    StartAnimTimerIfNeeded();
     RenderScreen();
 }
 
@@ -1149,6 +1148,40 @@ static void DrawTitleBar(VMINT layer, int offsetY, const VMWCHAR* titleText)
     }
 }
 
+static void EnsureButtonMetricsCached(void)
+{
+    if (s_btnMetricsCached) return;
+    vm_graphic_set_font(VM_SMALL_FONT);
+    vm_font_set_font_size(VM_SMALL_FONT);
+    for (int r = 0; r < KGridRows; r++)
+    {
+        for (int c = 0; c < KGridCols; c++)
+        {
+            int bw = GetColW(c);
+            const VMWCHAR* labelText = g_buttons[r][c].iLabel;
+            s_btnLabelLen[r][c] = w_strlen(labelText);
+            int txtW = vm_graphic_get_string_width((VMWSTR)labelText);
+            int off = (bw - txtW) / 2;
+            if (off < 1) off = 1;
+            s_btnTxtOffset[r][c] = off;
+        }
+    }
+    s_btnMetricsCached = true;
+}
+
+static void EnsureTaskbarMetricsCached(void)
+{
+    if (s_taskbarMetricsCached) return;
+    vm_graphic_set_font(VM_SMALL_FONT);
+    vm_font_set_font_size(VM_SMALL_FONT);
+    s_wHistory = vm_graphic_get_string_width((VMWSTR)u"History");
+    s_wClrClose = vm_graphic_get_string_width((VMWSTR)u"Clr&Close");
+    s_wBack = vm_graphic_get_string_width((VMWSTR)u"Back");
+    s_wClear = vm_graphic_get_string_width((VMWSTR)u"Clear");
+    s_wExit = vm_graphic_get_string_width((VMWSTR)u"Exit");
+    s_taskbarMetricsCached = true;
+}
+
 static void RenderCalculatorMain(void)
 {
     // Solid background fill for main calculation area (Y: 0 to 295) - fixes transparency
@@ -1161,6 +1194,7 @@ static void RenderCalculatorMain(void)
     // Force system small font
     vm_graphic_set_font(VM_SMALL_FONT);
     vm_font_set_font_size(VM_SMALL_FONT);
+    EnsureButtonMetricsCached();
 
     // 2. Top Display Box (Y: 38 to 78, Height: 40px) - Crisp Aero White LCD Box
     DrawRoundRect(g_layer, 4, 38, 232, 40, 4, KColor_RGB(145, 168, 192), KColor_RGB(255, 255, 255));
@@ -1238,17 +1272,18 @@ static void RenderCalculatorMain(void)
 
             // Dynamic Button label (DEG / RAD changes based on mode)
             const VMWCHAR* labelText = btn.iLabel;
+            int txtX = bx + s_btnTxtOffset[r][c];
+            int txtLen = s_btnLabelLen[r][c];
             if (r == 0 && c == 3)
             {
-                labelText = (g_engine.AngleMode() == EAngleDegrees) ? (const VMWCHAR*)u"DEG" : (const VMWCHAR*)u"RAD";
+                bool deg = (g_engine.AngleMode() == EAngleDegrees);
+                labelText = deg ? (const VMWCHAR*)u"DEG" : (const VMWCHAR*)u"RAD";
+                txtLen = 3;
             }
 
             SetDrawColor(textCol);
-            int txtW = vm_graphic_get_string_width((VMWSTR)labelText);
-            int txtX = bx + (bw - txtW) / 2;
             int txtY = by + (btnH - fontH) / 2;
-            if (txtX < bx + 1) txtX = bx + 1;
-            vm_graphic_textout_to_layer(g_layer, txtX, txtY, (VMWSTR)labelText, w_strlen(labelText));
+            vm_graphic_textout_to_layer(g_layer, txtX, txtY, (VMWSTR)labelText, txtLen);
         }
     }
 }
@@ -1350,6 +1385,8 @@ static void RenderHistoryMain(int offsetY)
 static void DrawTaskbar(bool isHistoryView)
 {
     // Taskbar (Y: 296 to 319) - Light Gray Palette with Dynamic Dividers & Fade on Button Press
+    EnsureTaskbarMetricsCached();
+
     const VMWCHAR* lskText = NULL;
     int lskLen = 0;
     const VMWCHAR* rskText = NULL;
@@ -1377,8 +1414,9 @@ static void DrawTaskbar(bool isHistoryView)
     if (fontH <= 0 || fontH > 24) fontH = 14;
     int txtY = KTaskbarTop + (KTaskbarHeight - fontH) / 2;
 
-    int lskW = vm_graphic_get_string_width((VMWSTR)lskText);
-    int rskW = vm_graphic_get_string_width((VMWSTR)rskText);
+    bool hasChars = (w_strlen(g_expression) > 0 || g_result[0] != 0);
+    int lskW = isHistoryView ? s_wClrClose : s_wHistory;
+    int rskW = isHistoryView ? s_wBack : (hasChars ? s_wClear : s_wExit);
 
     int leftDividerX = 8 + lskW + 8;
     int rightDividerX = (KScreenWidth - rskW - 8) - 8;
