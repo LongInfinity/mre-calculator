@@ -64,6 +64,11 @@ static float g_historyGlow[KMaxHistoryGlow] = {0};
 static float g_btnPressAmount[KGridRows][KGridCols] = {0};
 static int g_btnPressPhase[KGridRows][KGridCols] = {0}; // 0 = idle, 1 = fade in (press), 2 = fade out (release)
 
+static float g_lskPressAmount = 0.0f;
+static int g_lskPressPhase = 0; // 0 = idle, 1 = fade in (1/6s), 2 = fade out (5/6s)
+static float g_rskPressAmount = 0.0f;
+static int g_rskPressPhase = 0; // 0 = idle, 1 = fade in (1/6s), 2 = fade out (5/6s)
+
 static VMINT g_animTimer = -1;
 static const int KAnimIntervalMs = 33; // ~30 fps: smooth and ultra-low CPU load
 
@@ -231,6 +236,56 @@ static void OnAnimTick(VMINT tid)
         }
     }
 
+    // 4. Taskbar Left Softkey Press Animation (Fade in: 1/6s = 167ms, Fade out: 5/6s = 833ms)
+    if (g_lskPressPhase == 1)
+    {
+        g_lskPressAmount += 0.20f;
+        if (g_lskPressAmount >= 1.0f)
+        {
+            g_lskPressAmount = 1.0f;
+            g_lskPressPhase = 2; // Begin fade out
+        }
+        active = true;
+    }
+    else if (g_lskPressPhase == 2)
+    {
+        g_lskPressAmount -= 0.04f;
+        if (g_lskPressAmount <= 0.0f)
+        {
+            g_lskPressAmount = 0.0f;
+            g_lskPressPhase = 0;
+        }
+        else
+        {
+            active = true;
+        }
+    }
+
+    // 5. Taskbar Right Softkey Press Animation (Fade in: 1/6s = 167ms, Fade out: 5/6s = 833ms)
+    if (g_rskPressPhase == 1)
+    {
+        g_rskPressAmount += 0.20f;
+        if (g_rskPressAmount >= 1.0f)
+        {
+            g_rskPressAmount = 1.0f;
+            g_rskPressPhase = 2; // Begin fade out
+        }
+        active = true;
+    }
+    else if (g_rskPressPhase == 2)
+    {
+        g_rskPressAmount -= 0.04f;
+        if (g_rskPressAmount <= 0.0f)
+        {
+            g_rskPressAmount = 0.0f;
+            g_rskPressPhase = 0;
+        }
+        else
+        {
+            active = true;
+        }
+    }
+
     if (!active)
     {
         if (g_animTimer != -1)
@@ -384,6 +439,22 @@ static void TriggerButtonFade(int col, int row)
         g_btnPressAmount[row][col] = 0.0f;
         StartAnimTimerIfNeeded();
     }
+    RenderScreen();
+}
+
+static void TriggerLskFade(void)
+{
+    g_lskPressPhase = 1; // Start fade in (1/6s)
+    g_lskPressAmount = 0.0f;
+    StartAnimTimerIfNeeded();
+    RenderScreen();
+}
+
+static void TriggerRskFade(void)
+{
+    g_rskPressPhase = 1; // Start fade in (1/6s)
+    g_rskPressAmount = 0.0f;
+    StartAnimTimerIfNeeded();
     RenderScreen();
 }
 
@@ -1278,23 +1349,7 @@ static void RenderHistoryMain(int offsetY)
 
 static void DrawTaskbar(bool isHistoryView)
 {
-    // Taskbar (Y: 296 to 319) - Light Gray Palette with Dynamic Adjacent Vertical Dividers
-    // 1. Top border divider line (same divider color as other buttons)
-    SetDrawColor(KColor_RGB(160, 182, 208));
-    vm_graphic_line_ex(g_layer, 0, KTaskbarTop, KScreenWidth - 1, KTaskbarTop);
-
-    // 2. Light gray background
-    SetDrawColor(KColor_RGB(244, 246, 249)); // Light gray top
-    vm_graphic_fill_rect_ex(g_layer, 0, KTaskbarTop + 1, KScreenWidth, 11);
-    SetDrawColor(KColor_RGB(230, 234, 240)); // Soft gray bottom
-    vm_graphic_fill_rect_ex(g_layer, 0, KTaskbarTop + 12, KScreenWidth, 12);
-
-    vm_graphic_set_font(VM_SMALL_FONT);
-    vm_font_set_font_size(VM_SMALL_FONT);
-    int fontH = vm_graphic_get_character_height();
-    if (fontH <= 0 || fontH > 24) fontH = 14;
-    int txtY = KTaskbarTop + (KTaskbarHeight - fontH) / 2;
-
+    // Taskbar (Y: 296 to 319) - Light Gray Palette with Dynamic Dividers & Fade on Button Press
     const VMWCHAR* lskText = NULL;
     int lskLen = 0;
     const VMWCHAR* rskText = NULL;
@@ -1316,20 +1371,71 @@ static void DrawTaskbar(bool isHistoryView)
         rskLen = w_strlen(rskText);
     }
 
+    vm_graphic_set_font(VM_SMALL_FONT);
+    vm_font_set_font_size(VM_SMALL_FONT);
+    int fontH = vm_graphic_get_character_height();
+    if (fontH <= 0 || fontH > 24) fontH = 14;
+    int txtY = KTaskbarTop + (KTaskbarHeight - fontH) / 2;
+
     int lskW = vm_graphic_get_string_width((VMWSTR)lskText);
     int rskW = vm_graphic_get_string_width((VMWSTR)rskText);
 
-    // 3. Two dynamic vertical divider lines placed adjacent to the texts
-    SetDrawColor(KColor_RGB(160, 182, 208));
-    // Left divider (placed immediately to the right of left text with padding)
     int leftDividerX = 8 + lskW + 8;
-    vm_graphic_line_ex(g_layer, leftDividerX, KTaskbarTop + 1, leftDividerX, KScreenHeight - 1);
-
-    // Right divider (placed immediately to the left of right text with padding)
     int rightDividerX = (KScreenWidth - rskW - 8) - 8;
+
+    // 1. Base Taskbar Background Fill & Softkey Region Press Glow (Darker Gray Palette)
+    VMUINT16 baseTop = KColor_RGB(244, 246, 249);
+    VMUINT16 baseBot = KColor_RGB(230, 234, 240);
+
+    // Left Softkey Region (0 to leftDividerX)
+    VMUINT16 lskTopCol = baseTop;
+    VMUINT16 lskBotCol = baseBot;
+    if (g_lskPressAmount > 0.001f)
+    {
+        int p = (int)(g_lskPressAmount * 256.0f);
+        lskTopCol = BlendRGB565(baseTop, KColor_RGB(205, 212, 222), p);
+        lskBotCol = BlendRGB565(baseBot, KColor_RGB(180, 192, 206), p);
+    }
+    SetDrawColor(lskTopCol);
+    vm_graphic_fill_rect_ex(g_layer, 0, KTaskbarTop + 1, leftDividerX, 11);
+    SetDrawColor(lskBotCol);
+    vm_graphic_fill_rect_ex(g_layer, 0, KTaskbarTop + 12, leftDividerX, 12);
+
+    // Middle Region (leftDividerX + 1 to rightDividerX - 1)
+    int midW = rightDividerX - (leftDividerX + 1);
+    if (midW > 0)
+    {
+        SetDrawColor(baseTop);
+        vm_graphic_fill_rect_ex(g_layer, leftDividerX + 1, KTaskbarTop + 1, midW, 11);
+        SetDrawColor(baseBot);
+        vm_graphic_fill_rect_ex(g_layer, leftDividerX + 1, KTaskbarTop + 12, midW, 12);
+    }
+
+    // Right Softkey Region (rightDividerX + 1 to KScreenWidth - 1)
+    VMUINT16 rskTopCol = baseTop;
+    VMUINT16 rskBotCol = baseBot;
+    if (g_rskPressAmount > 0.001f)
+    {
+        int p = (int)(g_rskPressAmount * 256.0f);
+        rskTopCol = BlendRGB565(baseTop, KColor_RGB(205, 212, 222), p);
+        rskBotCol = BlendRGB565(baseBot, KColor_RGB(180, 192, 206), p);
+    }
+    int rskWTotal = KScreenWidth - (rightDividerX + 1);
+    if (rskWTotal > 0)
+    {
+        SetDrawColor(rskTopCol);
+        vm_graphic_fill_rect_ex(g_layer, rightDividerX + 1, KTaskbarTop + 1, rskWTotal, 11);
+        SetDrawColor(rskBotCol);
+        vm_graphic_fill_rect_ex(g_layer, rightDividerX + 1, KTaskbarTop + 12, rskWTotal, 12);
+    }
+
+    // 2. Dividers (same divider color as keypad buttons)
+    SetDrawColor(KColor_RGB(160, 182, 208));
+    vm_graphic_line_ex(g_layer, 0, KTaskbarTop, KScreenWidth - 1, KTaskbarTop);
+    vm_graphic_line_ex(g_layer, leftDividerX, KTaskbarTop + 1, leftDividerX, KScreenHeight - 1);
     vm_graphic_line_ex(g_layer, rightDividerX, KTaskbarTop + 1, rightDividerX, KScreenHeight - 1);
 
-    // 4. Softkey labels (Pure Black Text)
+    // 3. Softkey labels (Pure Black Text)
     SetDrawColor(KColor_RGB(0, 0, 0));
     vm_graphic_textout_to_layer(g_layer, 8, txtY, (VMWSTR)lskText, lskLen);
     vm_graphic_textout_to_layer(g_layer, KScreenWidth - rskW - 8, txtY, (VMWSTR)rskText, rskLen);
@@ -1497,6 +1603,7 @@ void handle_keyevt(VMINT event, VMINT keycode)
         }
         if (keycode == VM_KEY_LEFT_SOFTKEY) // Clr&Close
         {
+            TriggerLskFade();
             g_engine.ClearHistory();
             g_historyFocus = 0;
             g_historyTop = 0;
@@ -1506,6 +1613,7 @@ void handle_keyevt(VMINT event, VMINT keycode)
         }
         if (keycode == VM_KEY_RIGHT_SOFTKEY || keycode == VM_KEY_BACK || keycode == VM_KEY_CLEAR) // Back
         {
+            TriggerRskFade();
             CloseHistoryWithAnimation();
             return;
         }
@@ -1523,11 +1631,13 @@ void handle_keyevt(VMINT event, VMINT keycode)
     // Softkeys
     if (keycode == VM_KEY_LEFT_SOFTKEY) // Open History with slide animation
     {
+        TriggerLskFade();
         OpenHistoryWithAnimation();
         return;
     }
     if (keycode == VM_KEY_RIGHT_SOFTKEY) // RSK: Backspace until empty, then Exit
     {
+        TriggerRskFade();
         if (w_strlen(g_expression) > 0 || g_result[0] != 0)
         {
             DeleteChar();
@@ -1575,6 +1685,7 @@ void handle_keyevt(VMINT event, VMINT keycode)
     }
     if (keycode == VM_KEY_CLEAR || keycode == VM_KEY_BACK || keycode == VM_KEY_BACKSPACE || keycode == VM_KEY_DEL)
     {
+        TriggerRskFade();
         DeleteChar();
         RenderScreen();
         return;
@@ -1590,6 +1701,7 @@ void handle_penevt(VMINT event, VMINT x, VMINT y)
         // Touch on LSK (Clr&Close)
         if (y >= 290 && x <= 100)
         {
+            TriggerLskFade();
             g_engine.ClearHistory();
             g_historyFocus = 0;
             g_historyTop = 0;
@@ -1600,6 +1712,7 @@ void handle_penevt(VMINT event, VMINT x, VMINT y)
         // Touch on RSK (Back)
         if (y >= 290 && x >= 140)
         {
+            TriggerRskFade();
             CloseHistoryWithAnimation();
             return;
         }
@@ -1623,11 +1736,13 @@ void handle_penevt(VMINT event, VMINT x, VMINT y)
     // Touch on Softkeys
     if (y >= 290 && x <= 100) // LSK
     {
+        TriggerLskFade();
         OpenHistoryWithAnimation();
         return;
     }
     if (y >= 290 && x >= 140) // RSK
     {
+        TriggerRskFade();
         if (w_strlen(g_expression) > 0 || g_result[0] != 0)
         {
             DeleteChar();
