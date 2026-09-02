@@ -75,9 +75,13 @@ enum TSlideDirection
 };
 
 static const int KSlideTotalFrames = 10; // 10 frames * ~16.7ms = 166.7ms (1/6s)
+static const int KContentViewTop = 38;
+static const int KContentViewHeight = 258; // 296 - 38 = 258px
+static VMUINT16 s_historyBackdrop[KScreenWidth * KContentViewHeight];
+
 static TSlideDirection g_slideState = ESlideNone;
 static int g_slideFrame = 0;
-static int g_slideOffsetY = 0; // 0 .. 320 (History Y offset)
+static int g_slideOffsetY = 0; // Content viewport Y offset for opening slide
 static VMINT g_slideTimer = -1;
 
 // Directional Key Hold and Diagonal Navigation
@@ -102,6 +106,8 @@ static TGridBtn g_buttons[KGridRows][KGridCols];
 
 // Forward declarations
 static void RenderScreen(void);
+static void RenderNormalView(void);
+static void RenderHistoryView(int contentOffsetY);
 static void ExecuteButton(int col, int row);
 static void CalculateResult(void);
 static void ClearEntry(void);
@@ -397,10 +403,10 @@ static void OnSlideTimer(VMINT tid)
         }
         else
         {
-            // Ease-Out rate 4 (Quartic): starts fast, decelerates to stop
+            // Ease-Out rate 4 (Quartic): content slides up into viewport
             float rem = 1.0f - (float)g_slideFrame / (float)KSlideTotalFrames;
             float rem4 = rem * rem * rem * rem;
-            g_slideOffsetY = (int)(KScreenHeight * rem4 + 0.5f);
+            g_slideOffsetY = (int)(KContentViewHeight * rem4 + 0.5f);
         }
     }
     else if (g_slideState == ESlideClosing)
@@ -417,14 +423,6 @@ static void OnSlideTimer(VMINT tid)
                 vm_delete_timer(g_slideTimer);
                 g_slideTimer = -1;
             }
-        }
-        else
-        {
-            // Ease-Out rate 4 (Quartic): Y = H * (1 - (1 - t)^4)
-            float rem = 1.0f - (float)g_slideFrame / (float)KSlideTotalFrames;
-            float rem4 = rem * rem * rem * rem;
-            float progress = 1.0f - rem4;
-            g_slideOffsetY = (int)(KScreenHeight * progress + 0.5f);
         }
     }
     RenderScreen();
@@ -453,7 +451,7 @@ static void OpenHistoryWithAnimation(void)
     g_viewMode = EViewHistory;
     g_slideState = ESlideOpening;
     g_slideFrame = 0;
-    g_slideOffsetY = KScreenHeight; // Start from bottom (+320)
+    g_slideOffsetY = KContentViewHeight; // Content slides up from bottom of content viewport (+258)
     if (g_slideTimer == -1)
     {
         g_slideTimer = vm_create_timer(17, OnSlideTimer);
@@ -465,9 +463,21 @@ static void CloseHistoryWithAnimation(void)
 {
     if (g_slideState != ESlideNone) return;
     ResetKeyHoldState();
+
+    // Snapshot current History content area for Fade In Out cross-fade transition
+    if (g_layer != -1)
+    {
+        RenderHistoryView(0);
+        VMUINT16* fb = (VMUINT16*)vm_graphic_get_layer_buffer(g_layer);
+        if (fb != NULL)
+        {
+            memcpy(s_historyBackdrop, fb + KContentViewTop * KScreenWidth, KScreenWidth * KContentViewHeight * sizeof(VMUINT16));
+        }
+    }
+
     g_slideState = ESlideClosing;
     g_slideFrame = 0;
-    g_slideOffsetY = 0; // Start at top (0)
+    g_slideOffsetY = 0;
     if (g_slideTimer == -1)
     {
         g_slideTimer = vm_create_timer(17, OnSlideTimer);
@@ -1172,32 +1182,40 @@ static void RenderNormalView(void)
     vm_graphic_textout_to_layer(g_layer, KScreenWidth - rskW - 6, 300, (VMWSTR)rskLabel, w_strlen(rskLabel));
 }
 
-static void RenderHistoryView(int offsetY)
+static void RenderHistoryView(int contentOffsetY)
 {
-    // Background overlay container (covers the underlying calculator view)
-    int bgY = (offsetY < 0) ? 0 : offsetY;
-    int bgH = (bgY < KScreenHeight) ? (KScreenHeight - bgY) : 0;
-    if (bgH > 0)
-    {
-        SetDrawColor(KColor_RGB(218, 228, 242));
-        vm_graphic_fill_rect_ex(g_layer, 0, bgY, KScreenWidth, bgH);
-    }
-
-    // 1. Title Bar (Height: 34px, Width: 240px with Windows 7 Icon)
-    DrawTitleBar(g_layer, offsetY, (const VMWCHAR*)u"History");
+    // 1. Fixed Top Title Bar (Height: 34px, Width: 240px with Windows 7 Icon - stationary)
+    DrawTitleBar(g_layer, 0, (const VMWCHAR*)u"History");
 
     // Force system small font
     vm_graphic_set_font(VM_SMALL_FONT);
     vm_font_set_font_size(VM_SMALL_FONT);
 
-    // 2. List container (Y: 38 to 292, Height: 254px - 1px clipped corners)
-    DrawClippedRect(g_layer, 4, 38 + offsetY, 232, 254, KColor_RGB(165, 185, 208), KColor_RGB(248, 250, 254));
+    // 2. Fixed Bottom Softkey Bar (Y: 296 to 319 - stationary taskbar)
+    DrawRoundRect(g_layer, 0, 296, KScreenWidth, 24, 0, KColor_RGB(165, 188, 215), KColor_RGB(205, 220, 238));
+
+    SetDrawColor(KColor_RGB(165, 35, 45)); // Left Softkey: Clr&Close
+    vm_graphic_textout_to_layer(g_layer, 6, 300, (VMWSTR)u"Clr&Close", 9);
+
+    SetDrawColor(KColor_RGB(30, 60, 105)); // Right Softkey: Back
+    int backW = vm_graphic_get_string_width((VMWSTR)u"Back");
+    vm_graphic_textout_to_layer(g_layer, KScreenWidth - backW - 6, 300, (VMWSTR)u"Back", 4);
+
+    // 3. Middle Content Area (Y: 38 to 295, Height: 258px - strictly clipped between bars)
+    vm_graphic_set_clip(0, KContentViewTop, KScreenWidth, KContentViewHeight);
+
+    // Content background fill
+    SetDrawColor(KColor_RGB(218, 228, 242));
+    vm_graphic_fill_rect_ex(g_layer, 0, KContentViewTop, KScreenWidth, KContentViewHeight);
+
+    // List container (Y: 38 + contentOffsetY, Height: 254px - 1px clipped corners)
+    DrawClippedRect(g_layer, 4, 38 + contentOffsetY, 232, 254, KColor_RGB(165, 185, 208), KColor_RGB(248, 250, 254));
 
     int total = g_engine.HistoryCount();
     if (total == 0)
     {
-        int msgY = 138 + offsetY;
-        if (msgY >= 0 && msgY < KScreenHeight - 14)
+        int msgY = 138 + contentOffsetY;
+        if (msgY >= KContentViewTop && msgY < 296 - 14)
         {
             SetDrawColor(KColor_RGB(120, 135, 155));
             vm_graphic_textout_to_layer(g_layer, 60, msgY, (VMWSTR)u"(No history yet)", 16);
@@ -1210,7 +1228,7 @@ static void RenderHistoryView(int offsetY)
         if (g_historyTop < 0) g_historyTop = 0;
         if (g_historyTop > total - 1) g_historyTop = total - 1;
 
-        int curY = 42 + offsetY;
+        int curY = 42 + contentOffsetY;
         for (int i = g_historyTop; i < total && i < g_historyTop + maxVisible; i++)
         {
             const THistoryItem& item = g_engine.HistoryItem(i);
@@ -1226,19 +1244,19 @@ static void RenderHistoryView(int offsetY)
                 borderCol = BlendRGB565(KColor_RGB(190, 205, 225), KColor_RGB(240, 160, 20), t);
             }
 
-            if (curY < KScreenHeight && curY + itemH > 0)
+            if (curY < 296 && curY + itemH > KContentViewTop)
             {
                 DrawClippedRect(g_layer, 8, curY, 224, itemH - 4, borderCol, bgCol);
 
                 // Expression
-                if (curY + 4 >= 0 && curY + 4 < KScreenHeight - 14)
+                if (curY + 4 >= KContentViewTop && curY + 4 < 296 - 14)
                 {
                     SetDrawColor(KColor_RGB(60, 75, 95));
                     vm_graphic_textout_to_layer(g_layer, 12, curY + 4, (VMWSTR)item.iExpression, w_strlen(item.iExpression));
                 }
 
                 // Result
-                if (curY + 22 >= 0 && curY + 22 < KScreenHeight - 14)
+                if (curY + 22 >= KContentViewTop && curY + 22 < 296 - 14)
                 {
                     SetDrawColor(KColor_RGB(20, 120, 50));
                     VMWCHAR resLine[KMaxResultLen + 4] = {0};
@@ -1256,31 +1274,13 @@ static void RenderHistoryView(int offsetY)
         }
     }
 
-    // 3. Bottom Softkeys in History View (LSK: Clr&Close, RSK: Back)
-    int skY = 296 + offsetY;
-    if (skY < KScreenHeight && skY + 24 > 0)
-    {
-        DrawRoundRect(g_layer, 0, skY, KScreenWidth, 24, 0, KColor_RGB(165, 188, 215), KColor_RGB(205, 220, 238));
-
-        if (skY + 4 >= 0 && skY + 4 < KScreenHeight - 14)
-        {
-            SetDrawColor(KColor_RGB(165, 35, 45)); // Left Softkey: Clr&Close
-            vm_graphic_textout_to_layer(g_layer, 6, skY + 4, (VMWSTR)u"Clr&Close", 9);
-
-            SetDrawColor(KColor_RGB(30, 60, 105)); // Right Softkey: Back
-            int backW = vm_graphic_get_string_width((VMWSTR)u"Back");
-            vm_graphic_textout_to_layer(g_layer, KScreenWidth - backW - 6, skY + 4, (VMWSTR)u"Back", 4);
-        }
-    }
+    // Restore full layer clipping
+    vm_graphic_set_clip(0, 0, KScreenWidth, KScreenHeight);
 }
 
 static void RenderScreen(void)
 {
     if (g_layer == -1) return;
-
-    // Windows 7 Aero Glass Background fill
-    SetDrawColor(KColor_RGB(218, 228, 242));
-    vm_graphic_fill_rect_ex(g_layer, 0, 0, KScreenWidth, KScreenHeight);
 
     if (g_slideState == ESlideNone)
     {
@@ -1293,13 +1293,39 @@ static void RenderScreen(void)
             RenderHistoryView(0);
         }
     }
-    else
+    else if (g_slideState == ESlideOpening)
     {
-        // Overlay slide transition:
         // 1. Calculator view remains stationary in background
         RenderNormalView();
-        // 2. History view slides over vertically as an overlay
+        // 2. History content slides UP inside middle viewport (bars stay stationary)
         RenderHistoryView(g_slideOffsetY);
+    }
+    else if (g_slideState == ESlideClosing)
+    {
+        // Fade In Out: Fade In intensity 2, Fade Out intensity 4
+        RenderNormalView();
+
+        float t = (float)g_slideFrame / (float)KSlideTotalFrames;
+        float f_out = (1.0f - t) * (1.0f - t) * (1.0f - t) * (1.0f - t); // Fade Out intensity 4
+        float f_in = t * t;                                                 // Fade In intensity 2
+        float sum = f_out + f_in;
+        float alpha = (sum > 0.0001f) ? (f_out / sum) : 0.0f;
+        int a256 = (int)(alpha * 256.0f);
+
+        if (a256 > 0)
+        {
+            VMUINT16* fb = (VMUINT16*)vm_graphic_get_layer_buffer(g_layer);
+            if (fb != NULL)
+            {
+                int totalPx = KScreenWidth * KContentViewHeight;
+                VMUINT16* dst = fb + KContentViewTop * KScreenWidth;
+                const VMUINT16* src = s_historyBackdrop;
+                for (int p = 0; p < totalPx; p++)
+                {
+                    dst[p] = BlendRGB565(dst[p], src[p], a256);
+                }
+            }
+        }
     }
 
     // Flush layer to screen
