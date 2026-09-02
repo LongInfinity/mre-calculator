@@ -53,20 +53,22 @@ static float g_btnGlow[KGridRows][KGridCols] = {
     {0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
     {0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
     {0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
-    {0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
     {0.0f, 0.0f, 0.0f, 0.0f, 0.0f}
 };
-static VMINT g_fadeAnimTimer = -1;
 
 #define KMaxHistoryGlow 32
 static int g_historyFocus = 0;
 static int g_historyTop = 0;
 static float g_historyGlow[KMaxHistoryGlow] = {0};
-static VMINT g_historyAnimTimer = -1;
 
 static float g_btnPressAmount[KGridRows][KGridCols] = {0};
 static int g_btnPressPhase[KGridRows][KGridCols] = {0}; // 0 = idle, 1 = fade in (press), 2 = fade out (release)
-static VMINT g_pressAnimTimer = -1;
+
+static VMINT g_animTimer = -1;
+static const int KAnimIntervalMs = 33; // ~30 fps: smooth and ultra-low CPU load
+
+static VMUINT16 s_calcIconPreblended[KCALC_ICON_W * KCALC_ICON_H];
+static bool s_iconPreblended = false;
 
 enum TSlideDirection
 {
@@ -137,30 +139,31 @@ static VMUINT16 BlendRGB565(VMUINT16 c1, VMUINT16 c2, int t)
     return (VMUINT16)((r << 11) | (g << 5) | b);
 }
 
-static void OnFocusAnimTick(VMINT tid)
+static void OnAnimTick(VMINT tid)
 {
     bool active = false;
 
+    // 1. Cursor Glow for Keypad Grid
     for (int r = 0; r < KGridRows; r++)
     {
         for (int c = 0; c < KGridCols; c++)
         {
             if (r == g_selectedRow && c == g_selectedCol)
             {
-                // Fade In: 83ms (1/12s -> +0.30f per 25ms tick)
+                // Fade In: 83ms (+0.40f per 33ms tick)
                 if (g_btnGlow[r][c] < 1.0f)
                 {
-                    g_btnGlow[r][c] += 0.30f;
+                    g_btnGlow[r][c] += 0.40f;
                     if (g_btnGlow[r][c] > 1.0f) g_btnGlow[r][c] = 1.0f;
                     active = true;
                 }
             }
             else
             {
-                // Fade Out: 0.75s (750ms -> -0.0333f per 25ms tick)
+                // Fade Out: 750ms (-0.044f per 33ms tick)
                 if (g_btnGlow[r][c] > 0.0f)
                 {
-                    g_btnGlow[r][c] -= 0.0333f;
+                    g_btnGlow[r][c] -= 0.044f;
                     if (g_btnGlow[r][c] < 0.0f) g_btnGlow[r][c] = 0.0f;
                     active = true;
                 }
@@ -168,54 +171,60 @@ static void OnFocusAnimTick(VMINT tid)
         }
     }
 
-    if (!active)
+    // 2. Button Press Animations
+    for (int r = 0; r < KGridRows; r++)
     {
-        if (g_fadeAnimTimer != -1)
+        for (int c = 0; c < KGridCols; c++)
         {
-            vm_delete_timer(g_fadeAnimTimer);
-            g_fadeAnimTimer = -1;
+            if (g_btnPressPhase[r][c] == 1)
+            {
+                // Quick responsive attack to darker gold (~66ms)
+                g_btnPressAmount[r][c] += 0.50f;
+                if (g_btnPressAmount[r][c] >= 1.0f)
+                {
+                    g_btnPressAmount[r][c] = 1.0f;
+                    g_btnPressPhase[r][c] = 2; // Begin release
+                }
+                active = true;
+            }
+            else if (g_btnPressPhase[r][c] == 2)
+            {
+                // Release back to selector color (~165ms)
+                g_btnPressAmount[r][c] -= 0.20f;
+                if (g_btnPressAmount[r][c] <= 0.0f)
+                {
+                    g_btnPressAmount[r][c] = 0.0f;
+                    g_btnPressPhase[r][c] = 0;
+                }
+                else
+                {
+                    active = true;
+                }
+            }
         }
     }
-    RenderScreen();
-}
 
-static void StartGridFocusTransition(int newCol, int newRow)
-{
-    if (g_selectedCol == newCol && g_selectedRow == newRow) return;
-    g_selectedCol = newCol;
-    g_selectedRow = newRow;
-
-    if (g_fadeAnimTimer == -1)
-    {
-        g_fadeAnimTimer = vm_create_timer(25, OnFocusAnimTick);
-    }
-    RenderScreen();
-}
-
-static void OnHistoryAnimTick(VMINT tid)
-{
-    bool active = false;
+    // 3. History Item Focus Glow
     int total = g_engine.HistoryCount();
     if (total > KMaxHistoryGlow) total = KMaxHistoryGlow;
-
     for (int i = 0; i < total; i++)
     {
         if (i == g_historyFocus)
         {
-            // Fade in: 83ms (1/12s -> +0.30f per 25ms tick)
+            // Fade in: 83ms (+0.40f per 33ms tick)
             if (g_historyGlow[i] < 1.0f)
             {
-                g_historyGlow[i] += 0.30f;
+                g_historyGlow[i] += 0.40f;
                 if (g_historyGlow[i] > 1.0f) g_historyGlow[i] = 1.0f;
                 active = true;
             }
         }
         else
         {
-            // Fade out: 0.75s (750ms -> -0.0333f per 25ms tick)
+            // Fade out: 750ms (-0.044f per 33ms tick)
             if (g_historyGlow[i] > 0.0f)
             {
-                g_historyGlow[i] -= 0.0333f;
+                g_historyGlow[i] -= 0.044f;
                 if (g_historyGlow[i] < 0.0f) g_historyGlow[i] = 0.0f;
                 active = true;
             }
@@ -224,12 +233,30 @@ static void OnHistoryAnimTick(VMINT tid)
 
     if (!active)
     {
-        if (g_historyAnimTimer != -1)
+        if (g_animTimer != -1)
         {
-            vm_delete_timer(g_historyAnimTimer);
-            g_historyAnimTimer = -1;
+            vm_delete_timer(g_animTimer);
+            g_animTimer = -1;
         }
     }
+    RenderScreen();
+}
+
+static void StartAnimTimerIfNeeded(void)
+{
+    if (g_animTimer == -1)
+    {
+        g_animTimer = vm_create_timer(KAnimIntervalMs, OnAnimTick);
+    }
+}
+
+static void StartGridFocusTransition(int newCol, int newRow)
+{
+    if (g_selectedCol == newCol && g_selectedRow == newRow) return;
+    g_selectedCol = newCol;
+    g_selectedRow = newRow;
+
+    StartAnimTimerIfNeeded();
     RenderScreen();
 }
 
@@ -238,10 +265,7 @@ static void StartHistoryFocusTransition(int newFocus, int newTop)
     g_historyFocus = newFocus;
     g_historyTop = newTop;
 
-    if (g_historyAnimTimer == -1)
-    {
-        g_historyAnimTimer = vm_create_timer(25, OnHistoryAnimTick);
-    }
+    StartAnimTimerIfNeeded();
     RenderScreen();
 }
 
@@ -352,63 +376,13 @@ static void OnKeyHoldTimerTick(VMINT tid)
     }
 }
 
-static void OnPressAnimTick(VMINT tid)
-{
-    bool active = false;
-
-    for (int r = 0; r < KGridRows; r++)
-    {
-        for (int c = 0; c < KGridCols; c++)
-        {
-            if (g_btnPressPhase[r][c] == 1)
-            {
-                // Fade In to darker gold palette (quick responsive attack)
-                g_btnPressAmount[r][c] += 0.35f;
-                if (g_btnPressAmount[r][c] >= 1.0f)
-                {
-                    g_btnPressAmount[r][c] = 1.0f;
-                    g_btnPressPhase[r][c] = 2; // Begin fade out to original selector color
-                }
-                active = true;
-            }
-            else if (g_btnPressPhase[r][c] == 2)
-            {
-                // Fade Out back to original selector color
-                g_btnPressAmount[r][c] -= 0.12f;
-                if (g_btnPressAmount[r][c] <= 0.0f)
-                {
-                    g_btnPressAmount[r][c] = 0.0f;
-                    g_btnPressPhase[r][c] = 0;
-                }
-                else
-                {
-                    active = true;
-                }
-            }
-        }
-    }
-
-    if (!active)
-    {
-        if (g_pressAnimTimer != -1)
-        {
-            vm_delete_timer(g_pressAnimTimer);
-            g_pressAnimTimer = -1;
-        }
-    }
-    RenderScreen();
-}
-
 static void TriggerButtonFade(int col, int row)
 {
     if (row >= 0 && row < KGridRows && col >= 0 && col < KGridCols)
     {
         g_btnPressPhase[row][col] = 1; // Start fade in to darker gold
         g_btnPressAmount[row][col] = 0.0f;
-        if (g_pressAnimTimer == -1)
-        {
-            g_pressAnimTimer = vm_create_timer(25, OnPressAnimTick);
-        }
+        StartAnimTimerIfNeeded();
     }
     RenderScreen();
 }
@@ -1039,41 +1013,51 @@ static void DrawTitleBar(VMINT layer, int offsetY, const VMWCHAR* titleText)
         vm_graphic_line_ex(layer, 0, y + 33, KScreenWidth - 1, y + 33);
     }
 
-    // Draw Windows 7 Calculator Icon (24x24) from install.wim (vertically centered in 34px bar: Y = y + 5)
+    // Draw Windows 7 Calculator Icon (24x24) pre-blended buffer (vertically centered in 34px bar: Y = y + 5)
+    if (!s_iconPreblended)
+    {
+        for (int iy = 0; iy < KCALC_ICON_H; iy++)
+        {
+            VMUINT16 bgCol = (iy < 12) ? KColor_RGB(206, 224, 246) : KColor_RGB(180, 204, 234);
+            for (int ix = 0; ix < KCALC_ICON_W; ix++)
+            {
+                VMUINT32 argb = KCalcIconData[iy * KCALC_ICON_W + ix];
+                VMUINT32 alpha = (argb >> 24) & 0xFF;
+                if (alpha == 0)
+                {
+                    s_calcIconPreblended[iy * KCALC_ICON_W + ix] = bgCol;
+                }
+                else
+                {
+                    VMUINT32 r = (argb >> 16) & 0xFF;
+                    VMUINT32 g = (argb >> 8) & 0xFF;
+                    VMUINT32 b = argb & 0xFF;
+                    VMUINT16 icon565 = KColor_RGB(r, g, b);
+                    if (alpha == 255)
+                    {
+                        s_calcIconPreblended[iy * KCALC_ICON_W + ix] = icon565;
+                    }
+                    else
+                    {
+                        s_calcIconPreblended[iy * KCALC_ICON_W + ix] = BlendRGB565(bgCol, icon565, alpha);
+                    }
+                }
+            }
+        }
+        s_iconPreblended = true;
+    }
+
     VMUINT16* fb = (VMUINT16*)vm_graphic_get_layer_buffer(layer);
     if (fb != NULL)
     {
         int iconX = 8;
         int iconY = y + (34 - KCALC_ICON_H) / 2;
-
         for (int iy = 0; iy < KCALC_ICON_H; iy++)
         {
             int py = iconY + iy;
-            if (py < 0 || py >= KScreenHeight) continue;
-
-            for (int ix = 0; ix < KCALC_ICON_W; ix++)
+            if (py >= 0 && py < KScreenHeight)
             {
-                int px = iconX + ix;
-                if (px < 0 || px >= KScreenWidth) continue;
-
-                VMUINT32 argb = KCalcIconData[iy * KCALC_ICON_W + ix];
-                VMUINT32 alpha = (argb >> 24) & 0xFF;
-                if (alpha == 0) continue;
-
-                VMUINT32 r = (argb >> 16) & 0xFF;
-                VMUINT32 g = (argb >> 8) & 0xFF;
-                VMUINT32 b = argb & 0xFF;
-                VMUINT16 icon565 = KColor_RGB(r, g, b);
-
-                if (alpha == 255)
-                {
-                    fb[py * KScreenWidth + px] = icon565;
-                }
-                else
-                {
-                    VMUINT16 bg565 = fb[py * KScreenWidth + px];
-                    fb[py * KScreenWidth + px] = BlendRGB565(bg565, icon565, alpha);
-                }
+                memcpy(&fb[py * KScreenWidth + iconX], &s_calcIconPreblended[iy * KCALC_ICON_W], KCALC_ICON_W * sizeof(VMUINT16));
             }
         }
     }
@@ -1159,23 +1143,23 @@ static void RenderCalculatorMain(void)
             VMUINT16 botCol = btn.iBgColor;
             VMUINT16 textCol = btn.iTextColor;
 
-            // 1. Hover / Cursor Selector (Original Selector Gold Palette)
+            // 1. Hover / Cursor Selector (Slightly Darker / Richer Gold Palette)
             if (glow > 0.001f)
             {
                 int t = (int)(glow * 256.0f);
-                topCol = BlendRGB565(topCol, KColor_RGB(255, 252, 230), t); // Glow Top (Luminous Light Gold)
-                botCol = BlendRGB565(botCol, KColor_RGB(255, 230, 160), t); // Glow Bottom (Rich Warm Gold)
-                borderCol = BlendRGB565(borderCol, KColor_RGB(230, 150, 15), t);
+                topCol = BlendRGB565(topCol, KColor_RGB(255, 238, 175), t); // Glow Top (Slightly darker honey gold)
+                botCol = BlendRGB565(botCol, KColor_RGB(250, 205, 110), t); // Glow Bottom (Warm amber gold)
+                borderCol = BlendRGB565(borderCol, KColor_RGB(215, 130, 15), t); // Amber gold border
                 textCol = BlendRGB565(btn.iTextColor, KColor_RGB(0, 0, 0), t);
             }
 
-            // 2. Button Press (Fades in Darker Gold Palette and fades out to original selector color)
+            // 2. Button Press (Fades in Darker Gold Palette and fades out to selector color)
             if (press > 0.001f)
             {
                 int p = (int)(press * 256.0f);
-                topCol = BlendRGB565(topCol, KColor_RGB(255, 215, 110), p);   // Darker Gold Top
-                botCol = BlendRGB565(botCol, KColor_RGB(235, 165, 30), p);    // Darker Gold Bottom
-                borderCol = BlendRGB565(borderCol, KColor_RGB(180, 100, 10), p); // Darker Gold Border
+                topCol = BlendRGB565(topCol, KColor_RGB(245, 190, 70), p);   // Darker Gold Top
+                botCol = BlendRGB565(botCol, KColor_RGB(220, 140, 20), p);    // Darker Gold Bottom
+                borderCol = BlendRGB565(borderCol, KColor_RGB(165, 80, 10), p); // Darker Gold Border
                 textCol = KColor_RGB(0, 0, 0);
             }
 
@@ -1254,8 +1238,8 @@ static void RenderHistoryMain(int offsetY)
             if (glow > 0.001f)
             {
                 int t = (int)(glow * 256.0f);
-                bgCol = BlendRGB565(KColor_RGB(236, 242, 250), KColor_RGB(255, 245, 200), t);
-                borderCol = BlendRGB565(KColor_RGB(190, 205, 225), KColor_RGB(240, 160, 20), t);
+                bgCol = BlendRGB565(KColor_RGB(236, 242, 250), KColor_RGB(255, 235, 170), t);
+                borderCol = BlendRGB565(KColor_RGB(190, 205, 225), KColor_RGB(225, 140, 15), t);
             }
 
             if (curY < KMainViewHeight && curY + itemH > 0)
