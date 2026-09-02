@@ -955,6 +955,42 @@ static void DrawClippedButton(VMINT layer, int x, int y, int w, int h, VMUINT16 
     vm_graphic_line_ex(layer, x + w - 1, y + 1, x + w - 1, y + h - 2); // Right border (col x+w-1)
 }
 
+// Windows 7 Aero Menu / Toolbar Button Pill (2px rounded corners with two-tone soft glass fill)
+static void DrawMenuButtonPill(VMINT layer, int x, int y, int w, int h, VMUINT16 borderCol, VMUINT16 fillTop, VMUINT16 fillBottom)
+{
+    if (y >= KScreenHeight || y + h <= 0 || x >= KScreenWidth || x + w <= 0) return;
+    int halfH = h / 2;
+
+    // Top half fill
+    SetDrawColor(fillTop);
+    vm_graphic_fill_rect_ex(layer, x + 2, y + 1, w - 4, 1);
+    if (halfH > 2)
+    {
+        vm_graphic_fill_rect_ex(layer, x + 1, y + 2, w - 2, halfH - 2);
+    }
+
+    // Bottom half fill
+    SetDrawColor(fillBottom);
+    if (h - halfH > 2)
+    {
+        vm_graphic_fill_rect_ex(layer, x + 1, y + halfH, w - 2, h - halfH - 2);
+    }
+    vm_graphic_fill_rect_ex(layer, x + 2, y + h - 2, w - 4, 1);
+
+    // 2px rounded borders
+    SetDrawColor(borderCol);
+    vm_graphic_line_ex(layer, x + 2, y, x + w - 3, y);                 // Top border
+    vm_graphic_line_ex(layer, x + 2, y + h - 1, x + w - 3, y + h - 1); // Bottom border
+    vm_graphic_line_ex(layer, x, y + 2, x, y + h - 3);                 // Left border
+    vm_graphic_line_ex(layer, x + w - 1, y + 2, x + w - 1, y + h - 3); // Right border
+
+    // 2px corner points
+    vm_graphic_line_ex(layer, x + 1, y + 1, x + 1, y + 1);
+    vm_graphic_line_ex(layer, x + w - 2, y + 1, x + w - 2, y + 1);
+    vm_graphic_line_ex(layer, x + 1, y + h - 2, x + 1, y + h - 2);
+    vm_graphic_line_ex(layer, x + w - 2, y + h - 2, x + w - 2, y + h - 2);
+}
+
 static inline int GetColX(int c)
 {
     // Col 0: 4, Col 1: 51, Col 2: 98, Col 3: 145, Col 4: 193
@@ -1278,29 +1314,69 @@ static void RenderHistoryMain(int offsetY)
 
 static void DrawTaskbar(bool isHistoryView)
 {
-    // Taskbar (Y: 296 to 319) - Aero Frosted Bar (stationary)
-    DrawRoundRect(g_layer, 0, KTaskbarTop, KScreenWidth, KTaskbarHeight, 0, KColor_RGB(165, 188, 215), KColor_RGB(205, 220, 238));
+    // Taskbar (Y: 296 to 319) - Windows 7 Light Gray Palette with Rounded Menu Select Buttons
+    // 1. Top border divider line
+    SetDrawColor(KColor_RGB(212, 216, 222));
+    vm_graphic_line_ex(g_layer, 0, KTaskbarTop, KScreenWidth - 1, KTaskbarTop);
+
+    // 2. Light gray two-tone background
+    SetDrawColor(KColor_RGB(246, 247, 249)); // Light gray top
+    vm_graphic_fill_rect_ex(g_layer, 0, KTaskbarTop + 1, KScreenWidth, 11);
+    SetDrawColor(KColor_RGB(234, 237, 241)); // Soft gray bottom
+    vm_graphic_fill_rect_ex(g_layer, 0, KTaskbarTop + 12, KScreenWidth, 12);
+
+    vm_graphic_set_font(VM_SMALL_FONT);
+    vm_font_set_font_size(VM_SMALL_FONT);
+    int fontH = vm_graphic_get_character_height();
+    if (fontH <= 0 || fontH > 20) fontH = 14;
+    int btnY = KTaskbarTop + 2; // Y = 298
+    int btnH = 20;
+    int txtY = btnY + (btnH - fontH) / 2;
 
     if (isHistoryView)
     {
-        SetDrawColor(KColor_RGB(165, 35, 45)); // Left Softkey: Clr&Close
-        vm_graphic_textout_to_layer(g_layer, 6, 300, (VMWSTR)u"Clr&Close", 9);
+        // Left Softkey: "Clr&Close" (Rose-tinted Aero Menu Select Pill)
+        const VMWCHAR* lskText = (const VMWCHAR*)u"Clr&Close";
+        int lskW = vm_graphic_get_string_width((VMWSTR)lskText);
+        int lskBtnW = lskW + 14;
+        int lskX = 4;
+        DrawMenuButtonPill(g_layer, lskX, btnY, lskBtnW, btnH,
+            KColor_RGB(206, 125, 135), KColor_RGB(253, 235, 238), KColor_RGB(252, 217, 222));
+        SetDrawColor(KColor_RGB(165, 35, 45));
+        vm_graphic_textout_to_layer(g_layer, lskX + 7, txtY, (VMWSTR)lskText, 9);
 
-        SetDrawColor(KColor_RGB(30, 60, 105)); // Right Softkey: Back
-        int backW = vm_graphic_get_string_width((VMWSTR)u"Back");
-        vm_graphic_textout_to_layer(g_layer, KScreenWidth - backW - 6, 300, (VMWSTR)u"Back", 4);
+        // Right Softkey: "Back" (Windows 7 Aero Blue Menu Select Pill)
+        const VMWCHAR* rskText = (const VMWCHAR*)u"Back";
+        int rskW = vm_graphic_get_string_width((VMWSTR)rskText);
+        int rskBtnW = rskW + 14;
+        int rskX = KScreenWidth - rskBtnW - 4;
+        DrawMenuButtonPill(g_layer, rskX, btnY, rskBtnW, btnH,
+            KColor_RGB(125, 162, 206), KColor_RGB(235, 244, 253), KColor_RGB(217, 236, 252));
+        SetDrawColor(KColor_RGB(25, 55, 95));
+        vm_graphic_textout_to_layer(g_layer, rskX + 7, txtY, (VMWSTR)rskText, 4);
     }
     else
     {
-        SetDrawColor(KColor_RGB(30, 60, 105)); // Left Softkey: History
-        vm_graphic_textout_to_layer(g_layer, 6, 300, (VMWSTR)u"History", 7);
+        // Left Softkey: "History" (Windows 7 Aero Blue Menu Select Pill)
+        const VMWCHAR* lskText = (const VMWCHAR*)u"History";
+        int lskW = vm_graphic_get_string_width((VMWSTR)lskText);
+        int lskBtnW = lskW + 14;
+        int lskX = 4;
+        DrawMenuButtonPill(g_layer, lskX, btnY, lskBtnW, btnH,
+            KColor_RGB(125, 162, 206), KColor_RGB(235, 244, 253), KColor_RGB(217, 236, 252));
+        SetDrawColor(KColor_RGB(25, 55, 95));
+        vm_graphic_textout_to_layer(g_layer, lskX + 7, txtY, (VMWSTR)lskText, 7);
 
-        // Right Softkey: "Clear" if expression has characters, "Exit" if empty
+        // Right Softkey: "Clear" or "Exit" (Windows 7 Aero Blue Menu Select Pill)
         bool hasChars = (w_strlen(g_expression) > 0 || g_result[0] != 0);
-        const VMWCHAR* rskLabel = hasChars ? (const VMWCHAR*)u"Clear" : (const VMWCHAR*)u"Exit";
-        SetDrawColor(KColor_RGB(165, 35, 45));
-        int rskW = vm_graphic_get_string_width((VMWSTR)rskLabel);
-        vm_graphic_textout_to_layer(g_layer, KScreenWidth - rskW - 6, 300, (VMWSTR)rskLabel, w_strlen(rskLabel));
+        const VMWCHAR* rskText = hasChars ? (const VMWCHAR*)u"Clear" : (const VMWCHAR*)u"Exit";
+        int rskW = vm_graphic_get_string_width((VMWSTR)rskText);
+        int rskBtnW = rskW + 14;
+        int rskX = KScreenWidth - rskBtnW - 4;
+        DrawMenuButtonPill(g_layer, rskX, btnY, rskBtnW, btnH,
+            KColor_RGB(125, 162, 206), KColor_RGB(235, 244, 253), KColor_RGB(217, 236, 252));
+        SetDrawColor(KColor_RGB(25, 55, 95));
+        vm_graphic_textout_to_layer(g_layer, rskX + 7, txtY, (VMWSTR)rskText, w_strlen(rskText));
     }
 }
 
