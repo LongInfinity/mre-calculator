@@ -190,15 +190,14 @@ static void OnAnimTick(VMINT tid)
         }
     }
 
-    // 2. Button Press Animations
+    // 2. Button Press Animations (Fade in: 1/6s = 167ms, Fade out: 5/6s = 833ms)
     for (int r = 0; r < KGridRows; r++)
     {
         for (int c = 0; c < KGridCols; c++)
         {
             if (g_btnPressPhase[r][c] == 1)
             {
-                // Quick responsive attack to darker gold (~66ms)
-                g_btnPressAmount[r][c] += 0.50f;
+                g_btnPressAmount[r][c] += 0.20f;
                 if (g_btnPressAmount[r][c] >= 1.0f)
                 {
                     g_btnPressAmount[r][c] = 1.0f;
@@ -208,8 +207,7 @@ static void OnAnimTick(VMINT tid)
             }
             else if (g_btnPressPhase[r][c] == 2)
             {
-                // Release back to selector color (~165ms)
-                g_btnPressAmount[r][c] -= 0.20f;
+                g_btnPressAmount[r][c] -= 0.04f;
                 if (g_btnPressAmount[r][c] <= 0.0f)
                 {
                     g_btnPressAmount[r][c] = 0.0f;
@@ -1431,8 +1429,8 @@ static void DrawTaskbar(bool isHistoryView)
     if (g_lskPressAmount > 0.001f)
     {
         int p = (int)(g_lskPressAmount * 256.0f);
-        lskTopCol = BlendRGB565(baseTop, KColor_RGB(205, 212, 222), p);
-        lskBotCol = BlendRGB565(baseBot, KColor_RGB(180, 192, 206), p);
+        lskTopCol = BlendRGB565(baseTop, KColor_RGB(165, 178, 195), p);
+        lskBotCol = BlendRGB565(baseBot, KColor_RGB(130, 145, 168), p);
     }
     SetDrawColor(lskTopCol);
     vm_graphic_fill_rect_ex(g_layer, 0, KTaskbarTop + 1, leftDividerX, 11);
@@ -1455,8 +1453,8 @@ static void DrawTaskbar(bool isHistoryView)
     if (g_rskPressAmount > 0.001f)
     {
         int p = (int)(g_rskPressAmount * 256.0f);
-        rskTopCol = BlendRGB565(baseTop, KColor_RGB(205, 212, 222), p);
-        rskBotCol = BlendRGB565(baseBot, KColor_RGB(180, 192, 206), p);
+        rskTopCol = BlendRGB565(baseTop, KColor_RGB(165, 178, 195), p);
+        rskBotCol = BlendRGB565(baseBot, KColor_RGB(130, 145, 168), p);
     }
     int rskWTotal = KScreenWidth - (rightDividerX + 1);
     if (rskWTotal > 0)
