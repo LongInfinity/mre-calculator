@@ -1314,69 +1314,76 @@ static void RenderHistoryMain(int offsetY)
 
 static void DrawTaskbar(bool isHistoryView)
 {
-    // Taskbar (Y: 296 to 319) - Windows 7 Light Gray Palette with Rounded Menu Select Buttons
-    // 1. Top border divider line
-    SetDrawColor(KColor_RGB(212, 216, 222));
+    // Taskbar (Y: 296 to 319) - Light Gray Palette with Button Borders matching Keypad
+    // 1. Top border divider line (exact same divider color as keypad buttons)
+    SetDrawColor(KColor_RGB(160, 182, 208));
     vm_graphic_line_ex(g_layer, 0, KTaskbarTop, KScreenWidth - 1, KTaskbarTop);
 
-    // 2. Light gray two-tone background
-    SetDrawColor(KColor_RGB(246, 247, 249)); // Light gray top
+    // 2. Light gray background
+    SetDrawColor(KColor_RGB(244, 246, 249)); // Light gray top
     vm_graphic_fill_rect_ex(g_layer, 0, KTaskbarTop + 1, KScreenWidth, 11);
-    SetDrawColor(KColor_RGB(234, 237, 241)); // Soft gray bottom
+    SetDrawColor(KColor_RGB(230, 234, 240)); // Soft gray bottom
     vm_graphic_fill_rect_ex(g_layer, 0, KTaskbarTop + 12, KScreenWidth, 12);
 
     vm_graphic_set_font(VM_SMALL_FONT);
     vm_font_set_font_size(VM_SMALL_FONT);
     int fontH = vm_graphic_get_character_height();
     if (fontH <= 0 || fontH > 20) fontH = 14;
+
     int btnY = KTaskbarTop + 2; // Y = 298
-    int btnH = 20;
+    int btnH = 21;              // Y: 298 to 318 (-1px from bottom screen edge 319)
     int txtY = btnY + (btnH - fontH) / 2;
+
+    VMUINT16 borderCol = KColor_RGB(160, 182, 208); // Same divider/border as other buttons
+    VMUINT16 fillTop   = KColor_RGB(252, 253, 255); // Light gray button top
+    VMUINT16 fillBot   = KColor_RGB(236, 240, 246); // Light gray button bottom
+    VMUINT16 textCol   = KColor_RGB(20, 45, 85);
 
     if (isHistoryView)
     {
-        // Left Softkey: "Clr&Close" (Rose-tinted Aero Menu Select Pill)
+        // Left Softkey: "Clr&Close"
         const VMWCHAR* lskText = (const VMWCHAR*)u"Clr&Close";
         int lskW = vm_graphic_get_string_width((VMWSTR)lskText);
-        int lskBtnW = lskW + 14;
-        int lskX = 4;
+        int lskBtnW = lskW + 20;
+        int lskX = 1; // -1px from left screen edge
         DrawMenuButtonPill(g_layer, lskX, btnY, lskBtnW, btnH,
-            KColor_RGB(206, 125, 135), KColor_RGB(253, 235, 238), KColor_RGB(252, 217, 222));
+            KColor_RGB(215, 170, 175), KColor_RGB(254, 244, 245), KColor_RGB(252, 234, 236));
         SetDrawColor(KColor_RGB(165, 35, 45));
-        vm_graphic_textout_to_layer(g_layer, lskX + 7, txtY, (VMWSTR)lskText, 9);
+        int lTxtX = lskX + (lskBtnW - lskW) / 2;
+        vm_graphic_textout_to_layer(g_layer, lTxtX, txtY, (VMWSTR)lskText, 9);
 
-        // Right Softkey: "Back" (Windows 7 Aero Blue Menu Select Pill)
+        // Right Softkey: "Back"
         const VMWCHAR* rskText = (const VMWCHAR*)u"Back";
         int rskW = vm_graphic_get_string_width((VMWSTR)rskText);
-        int rskBtnW = rskW + 14;
-        int rskX = KScreenWidth - rskBtnW - 4;
-        DrawMenuButtonPill(g_layer, rskX, btnY, rskBtnW, btnH,
-            KColor_RGB(125, 162, 206), KColor_RGB(235, 244, 253), KColor_RGB(217, 236, 252));
-        SetDrawColor(KColor_RGB(25, 55, 95));
-        vm_graphic_textout_to_layer(g_layer, rskX + 7, txtY, (VMWSTR)rskText, 4);
+        int rskBtnW = rskW + 20;
+        int rskX = KScreenWidth - rskBtnW - 1; // -1px from right screen edge
+        DrawMenuButtonPill(g_layer, rskX, btnY, rskBtnW, btnH, borderCol, fillTop, fillBot);
+        SetDrawColor(textCol);
+        int rTxtX = rskX + (rskBtnW - rskW) / 2;
+        vm_graphic_textout_to_layer(g_layer, rTxtX, txtY, (VMWSTR)rskText, 4);
     }
     else
     {
-        // Left Softkey: "History" (Windows 7 Aero Blue Menu Select Pill)
+        // Left Softkey: "History"
         const VMWCHAR* lskText = (const VMWCHAR*)u"History";
         int lskW = vm_graphic_get_string_width((VMWSTR)lskText);
-        int lskBtnW = lskW + 14;
-        int lskX = 4;
-        DrawMenuButtonPill(g_layer, lskX, btnY, lskBtnW, btnH,
-            KColor_RGB(125, 162, 206), KColor_RGB(235, 244, 253), KColor_RGB(217, 236, 252));
-        SetDrawColor(KColor_RGB(25, 55, 95));
-        vm_graphic_textout_to_layer(g_layer, lskX + 7, txtY, (VMWSTR)lskText, 7);
+        int lskBtnW = lskW + 20;
+        int lskX = 1; // -1px from left screen edge
+        DrawMenuButtonPill(g_layer, lskX, btnY, lskBtnW, btnH, borderCol, fillTop, fillBot);
+        SetDrawColor(textCol);
+        int lTxtX = lskX + (lskBtnW - lskW) / 2;
+        vm_graphic_textout_to_layer(g_layer, lTxtX, txtY, (VMWSTR)lskText, 7);
 
-        // Right Softkey: "Clear" or "Exit" (Windows 7 Aero Blue Menu Select Pill)
+        // Right Softkey: "Clear" or "Exit"
         bool hasChars = (w_strlen(g_expression) > 0 || g_result[0] != 0);
         const VMWCHAR* rskText = hasChars ? (const VMWCHAR*)u"Clear" : (const VMWCHAR*)u"Exit";
         int rskW = vm_graphic_get_string_width((VMWSTR)rskText);
-        int rskBtnW = rskW + 14;
-        int rskX = KScreenWidth - rskBtnW - 4;
-        DrawMenuButtonPill(g_layer, rskX, btnY, rskBtnW, btnH,
-            KColor_RGB(125, 162, 206), KColor_RGB(235, 244, 253), KColor_RGB(217, 236, 252));
-        SetDrawColor(KColor_RGB(25, 55, 95));
-        vm_graphic_textout_to_layer(g_layer, rskX + 7, txtY, (VMWSTR)rskText, w_strlen(rskText));
+        int rskBtnW = rskW + 20;
+        int rskX = KScreenWidth - rskBtnW - 1; // -1px from right screen edge
+        DrawMenuButtonPill(g_layer, rskX, btnY, rskBtnW, btnH, borderCol, fillTop, fillBot);
+        SetDrawColor(hasChars ? KColor_RGB(165, 35, 45) : textCol);
+        int rTxtX = rskX + (rskBtnW - rskW) / 2;
+        vm_graphic_textout_to_layer(g_layer, rTxtX, txtY, (VMWSTR)rskText, w_strlen(rskText));
     }
 }
 
