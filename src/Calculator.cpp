@@ -157,10 +157,10 @@ static void OnFocusAnimTick(VMINT tid)
             }
             else
             {
-                // Fade Out: 5/3s (1667ms -> -0.015f per 25ms tick)
+                // Fade Out: 0.75s (750ms -> -0.0333f per 25ms tick)
                 if (g_btnGlow[r][c] > 0.0f)
                 {
-                    g_btnGlow[r][c] -= 0.015f;
+                    g_btnGlow[r][c] -= 0.0333f;
                     if (g_btnGlow[r][c] < 0.0f) g_btnGlow[r][c] = 0.0f;
                     active = true;
                 }
@@ -212,10 +212,10 @@ static void OnHistoryAnimTick(VMINT tid)
         }
         else
         {
-            // Fade out: 5/3s (1667ms -> -0.015f per 25ms tick)
+            // Fade out: 0.75s (750ms -> -0.0333f per 25ms tick)
             if (g_historyGlow[i] > 0.0f)
             {
-                g_historyGlow[i] -= 0.015f;
+                g_historyGlow[i] -= 0.0333f;
                 if (g_historyGlow[i] < 0.0f) g_historyGlow[i] = 0.0f;
                 active = true;
             }
