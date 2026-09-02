@@ -13,6 +13,7 @@
 #include "CalcIcon.h"
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #define KScreenWidth  240
 #define KScreenHeight 320
@@ -427,13 +428,14 @@ static void OnSlideTimer(VMINT tid)
         }
         else
         {
-            // Ease In-Out motion: In intensity 1 (linear ramp), Out intensity 4 (quartic)
+            // Ease In-Out motion: In intensity 0.25 (fast initial burst), Out intensity 4 (quartic)
             float t = (float)g_slideFrame / (float)KSlideTotalFrames;
             float progress;
             if (t < 0.5f)
             {
-                // Ease In (intensity 1): 0.5 * (2t)^1 = t
-                progress = t;
+                // Ease In (intensity 0.25): 0.5 * (2t)^0.25 = 0.5 * sqrt(sqrt(2t))
+                float t2 = 2.0f * t;
+                progress = 0.5f * sqrtf(sqrtf(t2));
             }
             else
             {
