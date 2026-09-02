@@ -147,20 +147,20 @@ static void OnFocusAnimTick(VMINT tid)
         {
             if (r == g_selectedRow && c == g_selectedCol)
             {
-                // Fade In: doubled duration (+0.075f per 25ms tick ~333ms)
+                // Fade In: 83ms (1/12s -> +0.30f per 25ms tick)
                 if (g_btnGlow[r][c] < 1.0f)
                 {
-                    g_btnGlow[r][c] += 0.075f;
+                    g_btnGlow[r][c] += 0.30f;
                     if (g_btnGlow[r][c] > 1.0f) g_btnGlow[r][c] = 1.0f;
                     active = true;
                 }
             }
             else
             {
-                // Fade Out: doubled duration (-0.075f per 25ms tick ~333ms)
+                // Fade Out: 5/3s (1667ms -> -0.015f per 25ms tick)
                 if (g_btnGlow[r][c] > 0.0f)
                 {
-                    g_btnGlow[r][c] -= 0.075f;
+                    g_btnGlow[r][c] -= 0.015f;
                     if (g_btnGlow[r][c] < 0.0f) g_btnGlow[r][c] = 0.0f;
                     active = true;
                 }
@@ -202,20 +202,20 @@ static void OnHistoryAnimTick(VMINT tid)
     {
         if (i == g_historyFocus)
         {
-            // Fade in: doubled duration (+0.075f per 25ms tick ~333ms)
+            // Fade in: 83ms (1/12s -> +0.30f per 25ms tick)
             if (g_historyGlow[i] < 1.0f)
             {
-                g_historyGlow[i] += 0.075f;
+                g_historyGlow[i] += 0.30f;
                 if (g_historyGlow[i] > 1.0f) g_historyGlow[i] = 1.0f;
                 active = true;
             }
         }
         else
         {
-            // Fade out: doubled duration (-0.075f per 25ms tick ~333ms)
+            // Fade out: 5/3s (1667ms -> -0.015f per 25ms tick)
             if (g_historyGlow[i] > 0.0f)
             {
-                g_historyGlow[i] -= 0.075f;
+                g_historyGlow[i] -= 0.015f;
                 if (g_historyGlow[i] < 0.0f) g_historyGlow[i] = 0.0f;
                 active = true;
             }
