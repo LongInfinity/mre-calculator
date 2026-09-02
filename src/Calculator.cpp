@@ -428,23 +428,10 @@ static void OnSlideTimer(VMINT tid)
         }
         else
         {
-            // Ease In-Out motion: In intensity 4 (high acceleration rate), Out intensity 4 (quartic deceleration)
-            float t = (float)g_slideFrame / (float)KSlideTotalFrames;
-            float progress;
-            if (t < 0.5f)
-            {
-                // Ease In (high acceleration rate 4): 0.5 * (2t)^4
-                float t2 = 2.0f * t;
-                float t4 = t2 * t2 * t2 * t2;
-                progress = 0.5f * t4;
-            }
-            else
-            {
-                // Ease Out (intensity 4): 1 - 0.5 * (2(1 - t))^4
-                float rem = 2.0f * (1.0f - t);
-                float rem4 = rem * rem * rem * rem;
-                progress = 1.0f - 0.5f * rem4;
-            }
+            // Ease-Out rate 4 (Quartic): Y = H * (1 - (1 - t)^4)
+            float rem = 1.0f - (float)g_slideFrame / (float)KSlideTotalFrames;
+            float rem4 = rem * rem * rem * rem;
+            float progress = 1.0f - rem4;
             g_slideOffsetY = (int)(KMainViewHeight * progress + 0.5f);
         }
     }
