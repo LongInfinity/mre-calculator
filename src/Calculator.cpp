@@ -489,8 +489,8 @@ static void TriggerButtonFade(int col, int row)
 {
     if (row >= 0 && row < KGridRows && col >= 0 && col < KGridCols)
     {
-        g_btnPressPhase[row][col] = 1; // Start fade in to darker gold
-        g_btnPressAmount[row][col] = 0.0f;
+        g_btnPressPhase[row][col] = 1; // Resume / start fade in
+        // Retain current g_btnPressAmount so it smoothly attacks without visual reset/flicker
         StartAnimTimerIfNeeded();
     }
     RenderScreen();
@@ -498,16 +498,16 @@ static void TriggerButtonFade(int col, int row)
 
 static void TriggerLskFade(void)
 {
-    g_lskPressPhase = 1; // Start fade in (1/6s)
-    g_lskPressAmount = 0.0f;
+    g_lskPressPhase = 1; // Resume / start fade in
+    // Retain current g_lskPressAmount so it smoothly attacks without visual reset/flicker
     StartAnimTimerIfNeeded();
     RenderScreen();
 }
 
 static void TriggerRskFade(void)
 {
-    g_rskPressPhase = 1; // Start fade in (1/6s)
-    g_rskPressAmount = 0.0f;
+    g_rskPressPhase = 1; // Resume / start fade in
+    // Retain current g_rskPressAmount so it smoothly attacks without visual reset/flicker
     StartAnimTimerIfNeeded();
     RenderScreen();
 }
