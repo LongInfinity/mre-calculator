@@ -78,11 +78,10 @@ static const int KSlideTotalFrames = 10; // 10 frames * ~16.7ms = 166.7ms (1/6s)
 static const int KMainViewHeight = 296; // Main calculation / history area (Y: 0..295)
 static const int KTaskbarTop = 296;     // Stationary taskbar at bottom (Y: 296..319)
 static const int KTaskbarHeight = 24;
-static VMUINT16 s_historyBackdrop[KScreenWidth * KMainViewHeight];
 
 static TSlideDirection g_slideState = ESlideNone;
 static int g_slideFrame = 0;
-static int g_slideOffsetY = 0; // Main area Y offset for opening slide
+static int g_slideOffsetY = 0; // Main area Y offset for opening/closing slide
 static VMINT g_slideTimer = -1;
 
 // Directional Key Hold and Diagonal Navigation
@@ -417,7 +416,7 @@ static void OnSlideTimer(VMINT tid)
         if (g_slideFrame >= KSlideTotalFrames)
         {
             g_slideFrame = KSlideTotalFrames;
-            g_slideOffsetY = 0;
+            g_slideOffsetY = KMainViewHeight;
             g_slideState = ESlideNone;
             g_viewMode = EViewNormal;
             if (g_slideTimer != -1)
@@ -425,6 +424,26 @@ static void OnSlideTimer(VMINT tid)
                 vm_delete_timer(g_slideTimer);
                 g_slideTimer = -1;
             }
+        }
+        else
+        {
+            // Ease In-Out motion: In intensity 2 (quadratic), Out intensity 4 (quartic)
+            float t = (float)g_slideFrame / (float)KSlideTotalFrames;
+            float progress;
+            if (t < 0.5f)
+            {
+                // Ease In (intensity 2): 0.5 * (2t)^2
+                float t2 = 2.0f * t;
+                progress = 0.5f * (t2 * t2);
+            }
+            else
+            {
+                // Ease Out (intensity 4): 1 - 0.5 * (2(1 - t))^4
+                float rem = 2.0f * (1.0f - t);
+                float rem4 = rem * rem * rem * rem;
+                progress = 1.0f - 0.5f * rem4;
+            }
+            g_slideOffsetY = (int)(KMainViewHeight * progress + 0.5f);
         }
     }
     RenderScreen();
@@ -465,21 +484,9 @@ static void CloseHistoryWithAnimation(void)
 {
     if (g_slideState != ESlideNone) return;
     ResetKeyHoldState();
-
-    // Snapshot current History main elements area for Fade In Out cross-fade transition
-    if (g_layer != -1)
-    {
-        RenderHistoryMain(0);
-        VMUINT16* fb = (VMUINT16*)vm_graphic_get_layer_buffer(g_layer);
-        if (fb != NULL)
-        {
-            memcpy(s_historyBackdrop, fb, KScreenWidth * KMainViewHeight * sizeof(VMUINT16));
-        }
-    }
-
     g_slideState = ESlideClosing;
     g_slideFrame = 0;
-    g_slideOffsetY = 0;
+    g_slideOffsetY = 0; // Starts at 0, slides down to +296
     if (g_slideTimer == -1)
     {
         g_slideTimer = vm_create_timer(17, OnSlideTimer);
@@ -1180,9 +1187,17 @@ static void RenderHistoryMain(int offsetY)
     // Clip specifically to main elements area (Y: 0 to 295) so slide does not bleed into taskbar
     vm_graphic_set_clip(0, 0, KScreenWidth, KMainViewHeight);
 
-    // Solid background fill for main area
-    SetDrawColor(KColor_RGB(218, 228, 242));
-    vm_graphic_fill_rect_ex(g_layer, 0, 0, KScreenWidth, KMainViewHeight);
+    // Solid background fill for sliding history overlay
+    if (offsetY < KMainViewHeight)
+    {
+        int fillY = (offsetY < 0) ? 0 : offsetY;
+        int fillH = KMainViewHeight - fillY;
+        if (fillH > 0)
+        {
+            SetDrawColor(KColor_RGB(218, 228, 242));
+            vm_graphic_fill_rect_ex(g_layer, 0, fillY, KScreenWidth, fillH);
+        }
+    }
 
     // 1. Title Bar (Height: 34px, Width: 240px with Windows 7 Icon)
     DrawTitleBar(g_layer, offsetY, (const VMWCHAR*)u"History");
@@ -1263,7 +1278,7 @@ static void RenderHistoryMain(int offsetY)
 
 static void DrawTaskbar(bool isHistoryView)
 {
-    // Taskbar (Y: 296 to 319) - Aero Frosted Bar
+    // Taskbar (Y: 296 to 319) - Aero Frosted Bar (stationary)
     DrawRoundRect(g_layer, 0, KTaskbarTop, KScreenWidth, KTaskbarHeight, 0, KColor_RGB(165, 188, 215), KColor_RGB(205, 220, 238));
 
     if (isHistoryView)
@@ -1317,32 +1332,11 @@ static void RenderScreen(void)
     }
     else if (g_slideState == ESlideClosing)
     {
-        // Fade In Out: Fade In intensity 2, Fade Out intensity 4
+        // 1. Calculator main elements stationary in background
         RenderCalculatorMain();
-
-        float t = (float)g_slideFrame / (float)KSlideTotalFrames;
-        float f_out = (1.0f - t) * (1.0f - t) * (1.0f - t) * (1.0f - t); // Fade Out intensity 4
-        float f_in = t * t;                                                 // Fade In intensity 2
-        float sum = f_out + f_in;
-        float alpha = (sum > 0.0001f) ? (f_out / sum) : 0.0f;
-        int a256 = (int)(alpha * 256.0f);
-
-        if (a256 > 0)
-        {
-            VMUINT16* fb = (VMUINT16*)vm_graphic_get_layer_buffer(g_layer);
-            if (fb != NULL)
-            {
-                int totalPx = KScreenWidth * KMainViewHeight;
-                VMUINT16* dst = fb;
-                const VMUINT16* src = s_historyBackdrop;
-                for (int p = 0; p < totalPx; p++)
-                {
-                    dst[p] = BlendRGB565(dst[p], src[p], a256);
-                }
-            }
-        }
-
-        // Stationary Taskbar at bottom with Calculator softkeys
+        // 2. History main elements slide DOWN with Ease In (2) / Ease Out (4) motion
+        RenderHistoryMain(g_slideOffsetY);
+        // 3. Stationary Taskbar at bottom with Calculator softkeys
         DrawTaskbar(false);
     }
 
